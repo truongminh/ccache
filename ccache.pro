@@ -12,7 +12,8 @@ SOURCES += \
     object.c \
     reply.c \
     dicttype.c \
-    client.c
+    client.c \
+    request.c
 
 HEADERS += \
     dict.h \
@@ -27,7 +28,8 @@ HEADERS += \
     object.h \
     client.h \
     signal_handler.h \
-    server.h
+    server.h \
+    request.h
 
 
 
