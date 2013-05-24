@@ -35,7 +35,7 @@ static void *getMcontextEip(ucontext_t *uc) {
 
 void bugReportStart(void) {
     if (server.bug_report_start == 0) {
-        redisLog(REDIS_WARNING,
+        redisLog(CCACHE_WARNING,
             "=== REDIS BUG REPORT START: Cut & paste starting from here ===");
         server.bug_report_start = 1;
     }
@@ -48,12 +48,12 @@ static void sigsegvHandler(int sig, siginfo_t *info, void *secret) {
     ucontext_t *uc = (ucontext_t*) secret;
     sds infostring, clients;
     struct sigaction act;
-    REDIS_NOTUSED(info);
+    CCACHE_NOTUSED(info);
 
     bugReportStart();
-    redisLog(REDIS_WARNING,
-        "    Redis %s crashed by signal: %d", REDIS_VERSION, sig);
-    redisLog(REDIS_WARNING,
+    redisLog(CCACHE_WARNING,
+        "    Redis %s crashed by signal: %d", CCACHE_VERSION, sig);
+    redisLog(CCACHE_WARNING,
         "    Failed assertion: %s (%s:%d)", server.assert_failed,
                         server.assert_file, server.assert_line);
 
@@ -65,17 +65,17 @@ static void sigsegvHandler(int sig, siginfo_t *info, void *secret) {
         trace[1] = getMcontextEip(uc);
     }
     messages = backtrace_symbols(trace, trace_size);
-    redisLog(REDIS_WARNING, "--- STACK TRACE");
+    redisLog(CCACHE_WARNING, "--- STACK TRACE");
     for (i=1; i<trace_size; ++i)
-        redisLog(REDIS_WARNING,"%s", messages[i]);
+        redisLog(CCACHE_WARNING,"%s", messages[i]);
 
     /* Log INFO and CLIENT LIST */
-    redisLog(REDIS_WARNING, "--- INFO OUTPUT");
+    redisLog(CCACHE_WARNING, "--- INFO OUTPUT");
     infostring = genRedisInfoString();
-    redisLog(REDIS_WARNING, infostring);
-    redisLog(REDIS_WARNING, "--- CLIENT LIST OUTPUT");
+    redisLog(CCACHE_WARNING, infostring);
+    redisLog(CCACHE_WARNING, "--- CLIENT LIST OUTPUT");
     clients = getAllClientsInfoString();
-    redisLog(REDIS_WARNING, clients);
+    redisLog(CCACHE_WARNING, clients);
     /* Don't sdsfree() strings to avoid a crash. Memory may be corrupted. */
 
     /* Log CURRENT CLIENT info */
@@ -84,15 +84,15 @@ static void sigsegvHandler(int sig, siginfo_t *info, void *secret) {
         sds client;
         int j;
 
-        redisLog(REDIS_WARNING, "--- CURRENT CLIENT INFO");
+        redisLog(CCACHE_WARNING, "--- CURRENT CLIENT INFO");
         client = getClientInfoString(cc);
-        redisLog(REDIS_WARNING,"client: %s", client);
+        redisLog(CCACHE_WARNING,"client: %s", client);
         /* Missing sdsfree(client) to avoid crash if memory is corrupted. */
         for (j = 0; j < cc->argc; j++) {
             robj *decoded;
 
             decoded = getDecodedObject(cc->argv[j]);
-            redisLog(REDIS_WARNING,"argv[%d]: '%s'", j, (char*)decoded->ptr);
+            redisLog(CCACHE_WARNING,"argv[%d]: '%s'", j, (char*)decoded->ptr);
             decrRefCount(decoded);
         }
         /* Check if the first argument, usually a key, is found inside the
@@ -105,14 +105,14 @@ static void sigsegvHandler(int sig, siginfo_t *info, void *secret) {
             de = dictFind(cc->db->dict, key->ptr);
             if (de) {
                 val = dictGetEntryVal(de);
-                redisLog(REDIS_WARNING,"key '%s' found in DB containing the following object:", key->ptr);
+                redisLog(CCACHE_WARNING,"key '%s' found in DB containing the following object:", key->ptr);
                 redisLogObjectDebugInfo(val);
             }
             decrRefCount(key);
         }
     }
 
-    redisLog(REDIS_WARNING,
+    redisLog(CCACHE_WARNING,
 "=== REDIS BUG REPORT END. Make sure to include from START to END. ===\n\n"
 "       Please report the crash opening an issue on github:\n\n"
 "           http://github.com/antirez/redis/issues\n\n"
@@ -134,9 +134,8 @@ static void sigsegvHandler(int sig, siginfo_t *info, void *secret) {
 #endif /* HAVE_BACKTRACE */
 
 static void sigtermHandler(int sig) {
-    REDIS_NOTUSED(sig);
     printf("Received SIGTERM, scheduling shutdown...");
-    //redisLog(REDIS_WARNING,"Received SIGTERM, scheduling shutdown...");
+    //redisLog(CCACHE_WARNING,"Received SIGTERM, scheduling shutdown...");
     //server.shutdown_asap = 1;
 }
 

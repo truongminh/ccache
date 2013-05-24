@@ -17,44 +17,41 @@
 #include "sds.h"    /* Dynamic safe strings */
 #include "util.h"
 #include "reply.h"
+#include "request.h"
 
 /* Error codes */
-#define REDIS_OK                0
-#define REDIS_ERR               -1
+#define CCACHE_OK                0
+#define CCACHE_ERR               -1
 
 /* Static server configuration */
-#define REDIS_SERVERPORT        6379    /* TCP port */
-#define REDIS_MAXIDLETIME       0       /* default client timeout: infinite */
-#define REDIS_IOBUF_LEN         (1024*4)
+#define CCACHE_SERVERPORT        6379    /* TCP port */
+#define CCACHE_MAXIDLETIME       0       /* default client timeout: infinite */
+#define CCACHE_IOBUF_LEN         (1024*4)
 
-#define REDIS_REPL_TIMEOUT 60
-#define REDIS_REPL_PING_SLAVE_PERIOD 10
-
-#define REDIS_ENCODING_RAW 0     /* Raw representation */
-#define REDIS_ENCODING_INT 1     /* Encoded as integer */
+#define CCACHE_ENCODING_RAW 0     /* Raw representation */
+#define CCACHE_ENCODING_INT 1     /* Encoded as integer */
 
 /* Hash table parameters */
-#define REDIS_HT_MINFILL        10      /* Minimal hash table fill 10% */
-
+#define CCACHE_HT_MINFILL        10      /* Minimal hash table fill 10% */
 
 /* Log levels */
-#define REDIS_DEBUG 0
-#define REDIS_VERBOSE 1
-#define REDIS_NOTICE 2
-#define REDIS_WARNING 3
+#define CCACHE_DEBUG 0
+#define CCACHE_VERBOSE 1
+#define CCACHE_NOTICE 2
+#define CCACHE_WARNING 3
 
 
 /* Object types
    The types are used when we free the objects
 */
-#define REDIS_STRING 0
-#define REDIS_LIST 1
-#define REDIS_SET 2
-#define REDIS_HASH 4
+#define CCACHE_STRING 0
+#define CCACHE_LIST 1
+#define CCACHE_SET 2
+#define CCACHE_HASH 4
 
-typedef struct redisObject {
+typedef struct {
     unsigned type:4;
-    unsigned storage:2;     /* REDIS_VM_MEMORY or REDIS_VM_SWAPPING */
+    unsigned storage:2;     /* CCACHE_VM_MEMORY or CCACHE_VM_SWAPPING */
     unsigned encoding:4;
     unsigned lru:22;        /* lru time (relative to server.lruclock) */
     int refcount;
@@ -66,7 +63,7 @@ typedef struct redisObject {
 } robj;
 
 /* Anti-warning macro... */
-#define REDIS_NOTUSED(V) ((void) V)
+#define CCACHE_NOTUSED(V) ((void) V)
 
 /*-----------------------------------------------------------------------------
  * Data types
@@ -74,19 +71,15 @@ typedef struct redisObject {
 
 /* With multiplexing we need to take per-clinet state.
  * Clients are taken in a liked list. */
-typedef struct redisClient {
+typedef struct httpClient {
     int fd;    
     char *ip;
     int port;
-    int dictid; /* What is it? */
-    sds querybuf;
     reply *rep;
-    int reqtype;
-    unsigned long reply_bytes; /* Tot bytes of objects in reply list */
-    int sentlen;
+    request *req;
     time_t lastinteraction; /* time of the last interaction, used for timeout */
-    listNode *node;
-} redisClient;
+    listNode *node; /* point to the position this clients in its eventLoop's list of clients*/
+} httpClient;
 
 /*-----------------------------------------------------------------------------
  * Extern declarations
@@ -97,15 +90,14 @@ typedef struct redisClient {
  *----------------------------------------------------------------------------*/
 
 /* networking.c -- Networking and Client related operations */
-redisClient *createClient(aeEventLoop *el, int fd);
+httpClient *createClient(aeEventLoop *el, int fd);
 #ifdef AE_MAX_IDLE_TIME
 int closeTimedoutClients(aeEventLoop *el);
 #endif
 
-void freeClient(aeEventLoop *el, redisClient *c);
-void resetClient(redisClient *c);
+void freeClient(aeEventLoop *el, httpClient *c);
+void resetClient(httpClient *c);
 void sendReplyToClient(aeEventLoop *el, int fd, void *privdata, int mask);
-void processInputBuffer(redisClient *c);
 void acceptTcpHandler(aeEventLoop *el, int fd, void *privdata, int mask);
 void readQueryFromClient(aeEventLoop *el, int fd, void *privdata, int mask);
 

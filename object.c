@@ -21,7 +21,7 @@ robj *createObject(int type, void *ptr) {
 }
 
 robj *createStringObject(char *ptr, size_t len) {
-    return createObject(REDIS_STRING,sdsnewlen(ptr,len));
+    return createObject(CCACHE_STRING,sdsnewlen(ptr,len));
 }
 
 robj *dupStringObject(robj *o) {
@@ -39,7 +39,7 @@ void decrRefCount(void *obj) {
     if (o->refcount <= 0) printf("decrRefCount against refcount <= 0\n");
     if (o->refcount == 1) {
         switch(o->type) {
-        case REDIS_STRING: sdsfree(o->ptr);; break;
+        case CCACHE_STRING: sdsfree(o->ptr);; break;
         default: printf("Unknown object type\n"); break;
         }
         zfree(o);
@@ -61,12 +61,12 @@ int checkType(robj *o, int type) {
  * sdscmp() from sds.c will apply memcmp() so this function ca be considered
  * binary safe. */
 int compareStringObjects(robj *a, robj *b) {
-    assert(a->type == REDIS_STRING && b->type == REDIS_STRING);
+    assert(a->type == CCACHE_STRING && b->type == CCACHE_STRING);
     return sdscmp((sds)a->ptr,(sds)b->ptr);
 }
 
 size_t stringObjectLen(robj *o) {
-    assert(o->type == REDIS_STRING);
+    assert(o->type == CCACHE_STRING);
     return sdslen(o->ptr);
 }
 /* Given an object returns the min number of seconds the object was never
@@ -74,10 +74,10 @@ size_t stringObjectLen(robj *o) {
 /*
 unsigned long estimateObjectIdleTime(robj *o) {
     if (server.lruclock >= o->lru) {
-        return (server.lruclock - o->lru) * REDIS_LRU_CLOCK_RESOLUTION;
+        return (server.lruclock - o->lru) * CCACHE_LRU_CLOCK_RESOLUTION;
     } else {
-        return ((REDIS_LRU_CLOCK_MAX - o->lru) + server.lruclock) *
-                    REDIS_LRU_CLOCK_RESOLUTION;
+        return ((CCACHE_LRU_CLOCK_MAX - o->lru) + server.lruclock) *
+                    CCACHE_LRU_CLOCK_RESOLUTION;
     }
 }
 */

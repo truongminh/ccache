@@ -14,7 +14,7 @@ struct redisServer {
     int ipfd;
     list *clients;
     list *slaves;
-    redisClient *current_client; /* Current client, only used on crash report */
+    httpClient *current_client; /* Current client, only used on crash report */
     char neterr[ANET_ERR_LEN];
     aeEventLoop *el;        /* TODO: multithreaded server using multiple eventLoop */
     int cronloops;              /* number of times the cron function run */

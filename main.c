@@ -16,8 +16,8 @@ struct aeEventLoop server; /* server global state */
  * not ok doing so inside the signal handler. */
 int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientDat){
     /*if (server.shutdown_asap) {
-        if (prepareForShutdown() == REDIS_OK) exit(0);
-        redisLog(REDIS_WARNING,"SIGTERM received but errors trying to shut down the server, check the logs for more information");
+        if (prepareForShutdown() == CCACHE_OK) exit(0);
+        redisLog(CCACHE_WARNING,"SIGTERM received but errors trying to shut down the server, check the logs for more information");
     }
     */    
     eventLoop->loop++;

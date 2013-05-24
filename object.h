@@ -3,10 +3,10 @@
 #include "sds.h"
 #include "assert.h"
 
-#define REDIS_STRING 1
+#define CCACHE_STRING 1
 typedef struct redisObject {
     unsigned type:4;
-    unsigned storage:2;     /* REDIS_VM_MEMORY or REDIS_VM_SWAPPING */
+    unsigned storage:2;     /* CCACHE_VM_MEMORY or CCACHE_VM_SWAPPING */
     unsigned encoding:4;
     unsigned lru:22;        /* lru time (relative to server.lruclock) */
     int refcount;
