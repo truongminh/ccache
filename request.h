@@ -11,7 +11,7 @@ typedef enum {
     parse_completed = 0,
     parse_not_completed = 1,
     parse_error = 4
-} parse_state;
+} request_parse_state;
 
 typedef enum
 {
@@ -57,7 +57,7 @@ request *requestCreate();
 void requestFree(request *r);
 sds requestGetHeaderValue(request *r, const sds key);
 void requestReset(request *r);
-parse_state parse(request* r, char* begin, char* end);
-
+request_parse_state requestParse(request* r, char* begin, char* end);
+void requestPrint(request *r);
 
 #endif

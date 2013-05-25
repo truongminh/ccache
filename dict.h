@@ -124,4 +124,6 @@ dictIterator *dictGetIterator(dict *ht);
 dictEntry *dictNext(dictIterator *iter);
 void dictReleaseIterator(dictIterator *iter);
 
+dictEntry *dictAddGetEntry(dict *ht, void *key, void *val);
+
 #endif /* __DICT_H */

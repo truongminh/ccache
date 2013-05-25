@@ -467,7 +467,7 @@ void rLog(int level, const char *fmt, ...) {
     FILE *fp;
     char buf[64];
     char msg[1024];
-
+    if (level < 3) return;
     fp = stdout;
     if (!fp) return;
 

@@ -349,3 +349,27 @@ listNode *listAddNodeTailGetNode(list *list, void *value)
     list->len++;
     return node;
 }
+
+/* Remove the specified node from the specified list.
+ * It's up to the caller to free the private value of the node.
+ *
+ * This function can't fail. */
+void listMoveNodeToTail(list *list, listNode *node)
+{
+    if (list->len < 2) return;
+    /* Key idea: the value of node is the only thing kept */
+    /* Move the current node out of list */
+    if (node->prev)
+        node->prev->next = node->next;
+    else
+        list->head = node->next;
+    if (node->next)
+        node->next->prev = node->prev;
+    else
+        list->tail = node->prev;
+    /* Add the node to tail */
+    node->prev = list->tail;
+    node->next = NULL;
+    list->tail->next = node;
+    list->tail = node;
+}

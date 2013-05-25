@@ -67,7 +67,7 @@ int main(void)
 
     char neterr[ANET_ERR_LEN];
     int port = 8888;
-    char *bindaddr = "127.0.0.1";
+    char *bindaddr = "0.0.0.0";
     int ipfd = anetTcpServer(neterr,port,bindaddr);
     if (ipfd == ANET_ERR) {
         printf("Opening port %d: %s",port, neterr);

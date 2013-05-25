@@ -39,7 +39,7 @@
 #define CCACHE_VERBOSE 1
 #define CCACHE_NOTICE 2
 #define CCACHE_WARNING 3
-
+#define CCACHE_LOG_LEVEL 3
 
 /* Object types
    The types are used when we free the objects
@@ -90,7 +90,7 @@ typedef struct httpClient {
  *----------------------------------------------------------------------------*/
 
 /* networking.c -- Networking and Client related operations */
-httpClient *createClient(aeEventLoop *el, int fd);
+httpClient *createClient(aeEventLoop *el, int fd, const char *ip, int port);
 #ifdef AE_MAX_IDLE_TIME
 int closeTimedoutClients(aeEventLoop *el);
 #endif

@@ -86,6 +86,7 @@ void listRewind(list *list, listIter *li);
 void listRewindTail(list *list, listIter *li);
 
 listNode *listAddNodeTailGetNode(list *list, void *value);
+void listMoveNodeToTail(list *list, listNode *node);
 
 /* Directions for iterators */
 #define AL_START_HEAD 0
