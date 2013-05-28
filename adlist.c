@@ -333,20 +333,28 @@ listNode *listIndex(list *list, int index) {
 listNode *listAddNodeTailGetNode(list *list, void *value)
 {
     listNode *node;
-
+    unsigned int ll = list->len;
     if ((node = malloc(sizeof(*node))) == NULL)
         return NULL;
-    node->value = value;
+    node->value = value;    
     if (list->len == 0) {
         list->head = list->tail = node;
         node->prev = node->next = NULL;
     } else {
+        if(list->tail == NULL) {
+            printf("LIST TAIL NULL \n");
+            exit(0);
+        }
         node->prev = list->tail;
         node->next = NULL;
         list->tail->next = node;
         list->tail = node;
     }
     list->len++;
+    if(list->len!=ll+1) {
+        printf("LIST ADD NODE TAIL ERROR %d %d \n",list->len,ll);
+        exit(0);
+    }
     return node;
 }
 
@@ -355,21 +363,16 @@ listNode *listAddNodeTailGetNode(list *list, void *value)
  *
  * This function can't fail. */
 void listMoveNodeToTail(list *list, listNode *node)
-{
-    if (list->len < 2) return;
-    /* Key idea: the value of node is the only thing kept */
-    /* Move the current node out of list */
-    if (node->prev)
-        node->prev->next = node->next;
-    else
-        list->head = node->next;
-    if (node->next)
+{    
+    if (node&&node->next) {
+        if (node->prev) node->prev->next = node->next;
+        else list->head = node->next;
+
         node->next->prev = node->prev;
-    else
-        list->tail = node->prev;
-    /* Add the node to tail */
-    node->prev = list->tail;
-    node->next = NULL;
-    list->tail->next = node;
-    list->tail = node;
+        node->prev = list->tail;
+        node->next = NULL;
+
+        list->tail->next = node;
+        list->tail = node;
+    }
 }

@@ -38,21 +38,21 @@ void acceptTcpHandler(aeEventLoop *el, int fd, void *privdata, int mask) {
     /* This el is from the master.
      * We may Change el to one from workers.
      */
-
+    aeEventLoop *nextEL = nextClient(el);
     if ((c = createClient(nextClient(el),cfd,cip,cport)) == NULL) {
         rLog(CCACHE_WARNING,"Error allocating resoures for the client");
-        close(cfd); /* May be already closed, just ingore errors */
+        freeClient(nextEL,c); /* May be already closed, just ingore errors */
         return;
     }
 #ifdef AE_MAX_CLIENT
     /* Check for max client */
-    if (el->maxclients && listLength(el->clients) > el->maxclients) {
+    if (nextEL->maxclients && listLength(nextEL->clients) > nextEL->maxclients) {
         char *err = "-ERR max number of clients reached\r\n";
         /* That's a best effort error message, don't check write errors */
         if (write(cfd,err,strlen(err)) == -1) {
             /* Nothing to do, Just to avoid the warning... */
         }
-        freeClient(el,c);
+        freeClient(nextEL,c);
         return;
     }
 #endif
@@ -64,27 +64,25 @@ httpClient *createClient(aeEventLoop *el, int fd, const char* ip, int port) {
     /* Set the socket to nonblock as the default state set by the kernel is blocking or waiting */
     anetNonBlock(NULL,fd);
     anetTcpNoDelay(NULL,fd);
-
-    if (aeCreateFileEvent(el,fd,AE_READABLE,
-                          readQueryFromClient, c) == AE_ERR)
-    {
-        close(fd);
-        free(c);
-        return NULL;
-    }
-
     c->fd = fd;
     c->rep = replyCreate();
     c->req = requestCreate();
     c->lastinteraction = time(NULL);
     c->ip = strdup(ip);
     c->port = port;
-    c->node = listAddNodeTailGetNode(el->clients,c);
+    c->node = NULL;
+    if (aeCreateFileEvent(el,fd,AE_READABLE,readQueryFromClient, c) == AE_ERR)
+    {
+        close(fd);
+        freeClient(el,c);
+        return NULL;
+    }
     return c;
 }
 
 void readQueryFromClient(aeEventLoop *el, int fd, void *privdata, int mask) {
     httpClient *c = (httpClient*) privdata;
+    if(c->node == NULL) c->node = listAddNodeTailGetNode(el->clients,c);
     char buf[CCACHE_IOBUF_LEN];
     int nread;
     CCACHE_NOTUSED(el);
@@ -111,18 +109,18 @@ void readQueryFromClient(aeEventLoop *el, int fd, void *privdata, int mask) {
         case parse_not_completed:
             break;
         case parse_completed:
-            if (_installWriteEvent(el, c) != CCACHE_OK) return;
+            if (_installWriteEvent(el, c) != CCACHE_OK) return;            
             replySetStatus(c->rep,reply_ok);
-            replySetContent(c->rep,"OK");
-            resetClient(c);
+            replySetContent(c->rep,"OK");            
             break;
         case parse_error:
             if (_installWriteEvent(el, c) != CCACHE_OK) {
                 return;
             }
             replySetStatus(c->rep,reply_ok);
-            replySetContent(c->rep,"ERROR");
-            resetClient(c);
+            replySetContent(c->rep,"ERROR");            
+            break;
+        default:
             break;
         };
     }
@@ -144,7 +142,7 @@ void sendReplyToClient(aeEventLoop *el, int fd, void *privdata, int mask) {
     CCACHE_NOTUSED(el);
     CCACHE_NOTUSED(mask);
     // if (totwritten > REDIS_MAX_WRITE_PER_EVENT)
-    sds obuf = replyToBuffer(c->rep);
+    sds obuf = replyToBuffer(c->rep);    
     nwritten = write(fd, obuf,sdslen(obuf));
     /* Content */
     if (nwritten == -1) {
@@ -159,21 +157,20 @@ void sendReplyToClient(aeEventLoop *el, int fd, void *privdata, int mask) {
     }
     c->lastinteraction = time(NULL);
     listMoveNodeToTail(el->clients,c->node);
+    resetClient(c);
     aeDeleteFileEvent(el,c->fd,AE_WRITABLE);
 }
 
 void freeClient(aeEventLoop *el, httpClient *c) {
-    if(c) {
-        aeDeleteFileEvent(el,c->fd,AE_READABLE);
-        aeDeleteFileEvent(el,c->fd,AE_WRITABLE);
-        close(c->fd);
-        /* Release memory */
-        if(c->ip) free(c->ip);
-        replyFree(c->rep);
-        requestFree(c->req);
-        listDelNode(el->clients,c->node);
-        free(c);
-    }
+    aeDeleteFileEvent(el,c->fd,AE_READABLE);
+    aeDeleteFileEvent(el,c->fd,AE_WRITABLE);
+    close(c->fd);
+    /* Release memory */
+    if(c->ip) free(c->ip);
+    replyFree(c->rep);
+    requestFree(c->req);
+    if(c->node) listDelNode(el->clients,c->node);
+    free(c);
 }
 
 
@@ -204,7 +201,7 @@ int closeTimedoutClients(aeEventLoop *el) {
                 freeClient(el,c);
                 deletedNodes++;
             }
-            else break;
+            //else break;
         }
         return deletedNodes;
     }

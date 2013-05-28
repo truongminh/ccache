@@ -69,8 +69,6 @@ typedef struct {
  * Data types
  *----------------------------------------------------------------------------*/
 
-/* With multiplexing we need to take per-clinet state.
- * Clients are taken in a liked list. */
 typedef struct httpClient {
     int fd;    
     char *ip;
@@ -81,15 +79,18 @@ typedef struct httpClient {
     listNode *node; /* point to the position this clients in its eventLoop's list of clients*/
 } httpClient;
 
-/*-----------------------------------------------------------------------------
- * Extern declarations
- *----------------------------------------------------------------------------*/
+typedef struct {
+    int fd;
+    char *ip;
+    int port;
+    int wasAccepted;
+} clientEndpoint;
+
 
 /*-----------------------------------------------------------------------------
  * Functions prototypes
  *----------------------------------------------------------------------------*/
 
-/* networking.c -- Networking and Client related operations */
 httpClient *createClient(aeEventLoop *el, int fd, const char *ip, int port);
 #ifdef AE_MAX_IDLE_TIME
 int closeTimedoutClients(aeEventLoop *el);

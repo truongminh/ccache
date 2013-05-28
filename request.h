@@ -51,6 +51,7 @@ typedef struct
     char buf[MAX_REQUEST_SIZE];
     sds current_header_key;
     sds current_header_value;
+    int first_header;
 } request;
 
 request *requestCreate();

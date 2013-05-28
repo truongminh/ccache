@@ -51,7 +51,7 @@ sds replyToBuffer(reply* r);
 
 int replyAddHeader(reply* r, const char* name, const char* value);
 
-void replySetContent(reply*r , const char* content);
+void replySetContent(reply*r , char *content);
 
 void replySetStatus(reply*r , reply_status_type vStatus);
 

@@ -33,6 +33,7 @@ request *requestCreate() {
     r->current_header_key = sdsempty();
     r->current_header_value = sdsempty();
     r->state = http_method_start;
+    r->first_header = 1;
     return r;
 }
 
@@ -56,6 +57,7 @@ void requestReset(request *r){
     r->headers = dictCreate(&sdsDictType,NULL);
     sdsclear(r->current_header_key);
     sdsclear(r->current_header_value);
+    r->first_header = 1;
     r->state = http_method_start;
 }
 
@@ -63,14 +65,14 @@ request_parse_state requestParse(request* r, char* begin, char* end)
 {
     request_parse_state result = parse_not_completed;
 
-    if(end>begin+MAX_REQUEST_SIZE) return parse_error;
+    if(end - begin > MAX_REQUEST_SIZE) return parse_error;
     char current;
     char *buf = r->buf;
     char *ptr = r->ptr;
     sds header_key = r->current_header_key;
     sds header_value = r->current_header_value;
     http_state state = r->state;
-    while (begin != end)
+    while (begin < end)
     {
         current = *begin++;
         switch (state)
@@ -92,7 +94,7 @@ request_parse_state requestParse(request* r, char* begin, char* end)
             if (current == ' ')
             {
                 *ptr++='\0';
-                r->method = sdsnewlen(buf,ptr-buf);
+                r->method = sdscatlen(r->method,buf,ptr-buf);
                 ptr=buf;
                 state = http_uri;
                 result =  parse_not_completed;
@@ -111,7 +113,7 @@ request_parse_state requestParse(request* r, char* begin, char* end)
             if (current == ' ')
             {
                 *ptr++='\0';
-                r->uri = sdsnewlen(buf,ptr-buf);
+                r->uri = sdscatlen(r->uri,buf,ptr-buf);
                 ptr=buf;
                 state = http_version_h;
                 result =  parse_not_completed;
@@ -268,8 +270,11 @@ request_parse_state requestParse(request* r, char* begin, char* end)
                  * In particular, assigning the values to sdsempty(),
                  * there is no need to check NULL in requestReset and requestFree
                 */
-                header_key = sdsempty();
-                header_value = sdsempty();
+                if(r->first_header == 0){
+                    header_key = sdsempty();
+                    header_value = sdsempty();
+                }
+                r->first_header = 1;
                 state = http_expecting_newline_3;
                 result =  parse_not_completed;
             }
@@ -288,8 +293,11 @@ request_parse_state requestParse(request* r, char* begin, char* end)
             else
             {
                 /* new header in the current line */
-                header_key = sdsempty();
-                header_value = sdsempty();
+                if(r->first_header != 1){
+                    header_key = sdsempty();
+                    header_value = sdsempty();
+                }
+                r->first_header = 0;
                 *ptr++=current;
                 state = http_header_name;
                 result =  parse_not_completed;
@@ -435,9 +443,10 @@ void requestPrint(request *r){
     printf("%s %s\n",r->method,r->uri);
     dictIterator *di = dictGetIterator(r->headers);
     dictEntry *de;
-    while((de = dictNext(di))){
+    while((de = dictNext(di)) != NULL) {
         printf("%s: %s\n",(sds)dictGetEntryKey(de),(sds)dictGetEntryVal(de));
     }
+    dictReleaseIterator(di);
     printf("Current Key: %s\n",r->current_header_key);
     printf("Current Value: %s\n",r->current_header_value);
     printf("STATE: %d\n",r->state);

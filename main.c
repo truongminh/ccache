@@ -7,7 +7,7 @@
 #include <pthread.h>
 
 
-#define NUM_THREADS     5
+#define NUM_THREADS     1
 
 struct aeEventLoop server; /* server global state */
 
@@ -21,12 +21,14 @@ int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientDat){
     }
     */    
     eventLoop->loop++;
+#ifdef AE_MAX_IDLE_TIME
     if ((eventLoop->maxidletime && !(eventLoop->loop % 10)))
         closeTimedoutClients(eventLoop);
+#endif
     return 100;
 }
 
-void *PrintHello(void *eventloop)
+void *aeMainThread(void *eventloop)
 {
    aeEventLoop *el = eventloop;
    aeMain(el);
@@ -58,7 +60,7 @@ int main(void)
        slave->myid = t+1;
        aeCreateTimeEvent(slave, 2000, serverCron, NULL, NULL);
        el->slaves[t] = slave;
-       rc = pthread_create(&threads[t], NULL, PrintHello, slave);
+       rc = pthread_create(&threads[t], NULL, aeMainThread, slave);
        if (rc){
           printf("ERROR; return code from pthread_create() is %d\n", rc);
           exit(-1);

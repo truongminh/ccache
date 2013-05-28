@@ -9,16 +9,27 @@ reply* replyCreate() {
     r->status = reply_ok;
     r->headers = dictCreate(&sdsDictType,NULL);
     r->obuf = NULL;
-    r->content = NULL;
+    r->content = sdsempty();
     return r;
 }
 
 void replyFree(reply* r) {
     dictRelease(r->headers);
-    if(r->content) sdsfree(r->content);
+    sdsfree(r->content);
     if(r->obuf) sdsfree(r->obuf);
     free(r);
 }
+
+void replyReset(reply *r) {
+    dictRelease(r->headers);
+    r->headers = dictCreate(&sdsDictType,NULL);
+    sdsclear(r->content);
+    if(r->obuf) {
+        sdsfree(r->obuf);
+        r->obuf = NULL;
+    }
+}
+
 
 sds replyToBuffer(reply* r) {
     if(r->obuf == NULL) {
@@ -26,15 +37,15 @@ sds replyToBuffer(reply* r) {
         obuf = sdscat(obuf,replyStatusToString(r->status));
         dictIterator *di = dictGetIterator(r->headers);
         dictEntry* de;
-        while((de = dictNext(di)) != NULL){
+        while((de = dictNext(di)) != NULL) {
             obuf = sdscatsds(obuf,dictGetEntryKey(de));
             obuf = sdscat(obuf,": ");
             obuf = sdscatsds(obuf,dictGetEntryVal(de));
             obuf = sdscat(obuf,"\r\n");
         }
-        if(r->content) {
-            obuf = sdscat(obuf,"Content-Length: ");
-            obuf = sdscatsds(obuf,sdsfromlonglong(sdslen(r->content)));
+        dictReleaseIterator(di);
+        if(sdslen(r->content) > 0) {
+            obuf = sdscatprintf(obuf,"Content-Length: %ld",sdslen(r->content));
             obuf = sdscat(obuf,"\r\n\r\n");
             obuf = sdscatsds(obuf,r->content);
         }
@@ -43,15 +54,15 @@ sds replyToBuffer(reply* r) {
     return r->obuf;
 }
 
-int replyAddHeader(reply* r, const char *name, const char *value) {
+int replyAddHeader(reply *r, const char *name, const char *value) {
     return dictAdd(r->headers,sdsnew(name),sdsnew(value));
 }
 
-void replySetContent(reply*r , const char* content){
-    r->content = sdsnew(content);
+void replySetContent(reply *r , char* content){
+    r->content = sdscat(r->content,content);
 }
 
-void replySetStatus(reply*r , reply_status_type status){
+void replySetStatus(reply *r , reply_status_type status){
 
     r->status = status;
 }
@@ -61,12 +72,10 @@ reply *replyStock(reply_status_type status) {
     sds obuf = r->obuf;
     obuf = sdscatsds(obuf,replyStatusToString(status));
     obuf = sdscat(obuf,"Content-Length: 0");
+    r->obuf = obuf;
     return r;
 }
 
-void replyReset(reply *r) {
-
-}
 
 char* replyStatusToString(reply_status_type status)
 {
