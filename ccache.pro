@@ -14,7 +14,9 @@ SOURCES += \
     dicttype.c \
     client.c \
     request.c \
-    cache.c
+    cache.c \
+    request_handler.c \
+    safe_list.c
 
 HEADERS += \
     dict.h \
@@ -31,7 +33,9 @@ HEADERS += \
     signal_handler.h \
     server.h \
     request.h \
-    cache.h
+    cache.h \
+    request_handler.h \
+    safe_list.h
 
 
 

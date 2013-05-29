@@ -1,5 +1,6 @@
 #include "dicttype.h"
 #include <string.h> /* memcpy */
+#include "adlist.h"
 
 int dictSdsKeyCompare(void *privdata, const void *key1,
         const void *key2)
@@ -20,6 +21,13 @@ void dictSdsDestructor(void *privdata, void *val)
     sdsfree(val);
 }
 
+void dictListDestructor(void *privdata, void *val)
+{
+    DICT_NOTUSED(privdata);
+
+    listRelease(val);
+}
+
 unsigned int dictSdsHash(const void *key) {
     return dictGenHashFunction((unsigned char*)key, sdslen((char*)key));
 }
@@ -31,4 +39,13 @@ dictType sdsDictType = {
     dictSdsKeyCompare,          /* key compare */
     dictSdsDestructor,          /* key destructor */
     dictSdsDestructor           /* val destructor */
+};
+
+dictType keylistDictType = {
+    dictSdsHash,                /* hash function */
+    NULL,                       /* key dup */
+    NULL,                       /* val dup */
+    dictSdsKeyCompare,          /* key compare */
+    dictSdsDestructor,  /* key destructor */
+    dictListDestructor          /* val destructor */
 };

@@ -10,6 +10,7 @@ reply* replyCreate() {
     r->headers = dictCreate(&sdsDictType,NULL);
     r->obuf = NULL;
     r->content = sdsempty();
+    r->isCached = 0;
     return r;
 }
 
@@ -24,10 +25,8 @@ void replyReset(reply *r) {
     dictRelease(r->headers);
     r->headers = dictCreate(&sdsDictType,NULL);
     sdsclear(r->content);
-    if(r->obuf) {
-        sdsfree(r->obuf);
-        r->obuf = NULL;
-    }
+    if(r->isCached) r->obuf = NULL;
+    else sdsfree(r->obuf);
 }
 
 

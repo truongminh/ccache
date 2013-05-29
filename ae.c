@@ -41,6 +41,7 @@
 #include "ae.h"
 #include "malloc.h"
 #include "client.h"
+#include "dicttype.h"
 
 /* Include the best multiplexing layer supported by this system.
  * The following should be ordered by performances, descending. */
@@ -67,6 +68,7 @@ aeEventLoop *aeCreateEventLoop(void) {
     for (i = 0; i < AE_SETSIZE; i++)
         eventLoop->events[i].mask = AE_NONE;
     eventLoop->clients = listCreate();
+    eventLoop->bclients = dictCreate(&keylistDictType,NULL);
 #ifdef AE_MAX_CLIENT
     eventLoop->maxclients = AE_MAX_CLIENT;
 #endif

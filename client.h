@@ -18,6 +18,7 @@
 #include "util.h"
 #include "reply.h"
 #include "request.h"
+#include "object.h"
 
 /* Error codes */
 #define CCACHE_OK                0
@@ -39,28 +40,7 @@
 #define CCACHE_VERBOSE 1
 #define CCACHE_NOTICE 2
 #define CCACHE_WARNING 3
-#define CCACHE_LOG_LEVEL 3
-
-/* Object types
-   The types are used when we free the objects
-*/
-#define CCACHE_STRING 0
-#define CCACHE_LIST 1
-#define CCACHE_SET 2
-#define CCACHE_HASH 4
-
-typedef struct {
-    unsigned type:4;
-    unsigned storage:2;     /* CCACHE_VM_MEMORY or CCACHE_VM_SWAPPING */
-    unsigned encoding:4;
-    unsigned lru:22;        /* lru time (relative to server.lruclock) */
-    int refcount;
-    void *ptr;
-    /* VM fields are only allocated if VM is active, otherwise the
-     * object allocation function will just allocate
-     * sizeof(redisObjct) minus sizeof(redisObjectVM), so using
-     * Redis without VM active will not have any overhead. */
-} robj;
+#define CCACHE_LOG_LEVEL 0
 
 /* Anti-warning macro... */
 #define CCACHE_NOTUSED(V) ((void) V)
@@ -77,6 +57,7 @@ typedef struct httpClient {
     request *req;
     time_t lastinteraction; /* time of the last interaction, used for timeout */
     listNode *node; /* point to the position this clients in its eventLoop's list of clients*/
+    int blocked;
 } httpClient;
 
 typedef struct {
@@ -101,6 +82,8 @@ void resetClient(httpClient *c);
 void sendReplyToClient(aeEventLoop *el, int fd, void *privdata, int mask);
 void acceptTcpHandler(aeEventLoop *el, int fd, void *privdata, int mask);
 void readQueryFromClient(aeEventLoop *el, int fd, void *privdata, int mask);
+
+void unblockClient(aeEventLoop *el, sds key, robj *obj);
 
 /*
 #if defined(__GNUC__)

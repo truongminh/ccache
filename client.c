@@ -3,9 +3,10 @@
 #include "malloc.h"
 #include "anet.h"   /* Networking the easy way */
 #include "pthread.h"
+#include "request_handler.h"
 
 static int _installWriteEvent(aeEventLoop *el, httpClient *c);
-
+static int blockClient(dict *bclients, sds key, httpClient *c);
 /* -----------------------------------------------------------------------------
  * Low level functions to accept connection and create new clients
  * -------------------------------------------------------------------------- */
@@ -71,6 +72,7 @@ httpClient *createClient(aeEventLoop *el, int fd, const char* ip, int port) {
     c->ip = strdup(ip);
     c->port = port;
     c->node = NULL;
+    c->blocked = 0;
     if (aeCreateFileEvent(el,fd,AE_READABLE,readQueryFromClient, c) == AE_ERR)
     {
         close(fd);
@@ -109,16 +111,27 @@ void readQueryFromClient(aeEventLoop *el, int fd, void *privdata, int mask) {
         case parse_not_completed:
             break;
         case parse_completed:
-            if (_installWriteEvent(el, c) != CCACHE_OK) return;            
-            replySetStatus(c->rep,reply_ok);
-            replySetContent(c->rep,"OK");            
+        {
+            int handle_result = requestHandle(c->req,c->rep,el->cache);
+            if(handle_result == HANDLER_BLOCK){
+                if(blockClient(el->bclients,c->req->uri,c) == CCACHE_ERR){
+                     if (_installWriteEvent(el, c) != CCACHE_OK) return;
+                     requestHandleError(c->req,c->rep);
+                }
+            }
+            else {
+                if (_installWriteEvent(el, c) != CCACHE_OK) return;
+                if(handle_result == HANDLER_ERR)
+                    requestHandleError(c->req,c->rep);
+                /* For HANDLE_OK there is nothing to do */
+            }
             break;
+        }
         case parse_error:
             if (_installWriteEvent(el, c) != CCACHE_OK) {
                 return;
             }
-            replySetStatus(c->rep,reply_ok);
-            replySetContent(c->rep,"ERROR");            
+            requestHandleError(c->req,c->rep);
             break;
         default:
             break;
@@ -198,10 +211,11 @@ int closeTimedoutClients(aeEventLoop *el) {
                     (now - c->lastinteraction > el->maxidletime))
             {
                 rLog(CCACHE_VERBOSE,"Closing idle client");
+                /* if (c->isblocked) */
                 freeClient(el,c);
                 deletedNodes++;
             }
-            //else break;
+            else break;
         }
         return deletedNodes;
     }
@@ -209,3 +223,43 @@ int closeTimedoutClients(aeEventLoop *el) {
 }
 
 #endif
+
+
+int blockClient(dict *bclients, sds key, httpClient *c)
+{
+    /* And in the other "side", to map keys -> clients */
+    dictEntry *de = dictFind(bclients,key);
+    list *l;
+    if (de == NULL) {
+        /* For every key we take a list of clients blocked for it */
+        l = listCreate();
+        if(dictAdd(bclients,key,l) == DICT_ERR)
+            return CCACHE_ERR;
+    } else {
+        l = dictGetEntryVal(de);
+    }
+    listAddNodeTail(l,c);
+    c->blocked = 1;
+    return CCACHE_OK;
+}
+
+void unblockClient(aeEventLoop *el, sds key, robj *obj)
+{
+    /* And in the other "side", to map keys -> clients */
+    dictEntry *de = dictFind(el->bclients,key);
+    listIter li;
+    listNode *ln;
+    if (de) {
+        list *l = dictGetEntryVal(de);
+        listRewind(l,&li);
+        while ((ln = listNext(&li)) != NULL) {
+            httpClient *c = listNodeValue(ln);
+            c->rep->obuf = obj->ptr;
+            c->blocked = 0;
+            if (_installWriteEvent(el, c) != CCACHE_OK) {
+                freeClient(el,c);
+            }
+        }
+        dictDelete(el->bclients,key);
+    }
+}

@@ -11,5 +11,6 @@ unsigned int dictSdsHash(const void *key);
 
 /* sds dict, keys and values are sds strings. */
 dictType sdsDictType;
+dictType keylistDictType;
 
 #endif // DICTTYPE_H

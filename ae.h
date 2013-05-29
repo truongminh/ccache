@@ -34,6 +34,7 @@
 #define __AE_H__
 
 #include "adlist.h"
+#include "dict.h"
 
 #define AE_MAX_CLIENT 30000
 #define AE_MAX_IDLE_TIME 10 /* seconds */
@@ -104,7 +105,9 @@ typedef struct aeEventLoop {
     void *apidata; /* This is used for polling API specific data */
     /* for epoll apidata = {epoll fd, array of events} */
     aeBeforeSleepProc *beforesleep;
-    list *clients;
+    list *clients;    
+    dict *bclients;
+    void *cache;
     struct aeEventLoop **slaves;
     int myid;
     int nextSlaveID;

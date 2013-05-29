@@ -4,21 +4,39 @@
 #include "dict.h"
 #include "adlist.h"
 #include "object.h"
+#include "safe_list.h"
+
+
+#define CACHE_OK DICT_OK
+#define CACHE_ERR DICT_ERR
 
 typedef struct cacheEntry {
-    dictEntry *de;
     listNode *ln;
-    robj* value;
+    robj *value;
 } cacheEntry;
 
-typedef dict ccache;
+typedef struct {
+    dict *d;
+    safeList *in;
+    safeList *out;
+    list *accesslist;
+} ccache;
 
-#define cacheGetList(c) ((list*)c->privdata)
+typedef struct {
+    sds key;
+    robj *obj;
+} cacheMsg;
+
+#define cacheGetList(c) (c->accesslist)
 ccache *cacheCreate();
 int cacheDeleteStaleEntries(ccache *c, unsigned int n);
-void cacheDelete(ccache* c, char* key);
-cacheEntry *cacheAdd(dict *ccache, char* key, robj *value);
-cacheEntry *cacheFind(dict* ccache, sds key);
-#define cacheNumberOfEntry(c) c->used
+void cacheDelete(ccache* c, sds key);
+int cacheAdd(ccache *c, sds key, robj *value);
+robj *cacheFind(ccache *c, sds key);
+#define cacheNumberOfEntry(c) (c->used)
+
+int cacheRequest(ccache *c, sds key);
+int cacheSendMessage(ccache *c, robj *obj);
+cacheMsg *cacheGetMessage(ccache *c);
 
 #endif // CCACHE_H

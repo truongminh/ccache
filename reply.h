@@ -42,6 +42,7 @@ typedef struct reply_t
     sds content;
     /// The output buffer could be used in cause we want to cache the reply
     sds obuf;
+    int isCached;
 } reply;
 
 reply* replyCreate();

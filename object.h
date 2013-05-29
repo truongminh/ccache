@@ -3,7 +3,9 @@
 #include "sds.h"
 #include "assert.h"
 
-#define CCACHE_STRING 1
+#define OBJ_NULL 0
+#define OBJ_SDS 1
+
 typedef struct redisObject {
     unsigned type:4;
     unsigned storage:2;     /* CCACHE_VM_MEMORY or CCACHE_VM_SWAPPING */
@@ -17,15 +19,16 @@ typedef struct redisObject {
      * Redis without VM active will not have any overhead. */
 } robj;
 
+robj *objectCreateNULL();
+robj *objectCreate(int type, void *ptr) ;
+robj *objFromSds(sds ptr);
+robj *objFromChar(char *ptr, size_t len) ;
 
-robj *createObject(int type, void *ptr) ;
-robj *createStringObject(char *ptr, size_t len) ;
-
-robj *dupStringObject(robj *o) ;
+robj *objectDupSds(robj *o) ;
 
 
-void incrRefCount(robj *o) ;
-void decrRefCount(void *obj);
+void objectIncrRef(robj *o) ;
+void objectDecrRef(void *obj);
 int checkType(robj *o, int type) ;
 
 /* Compare two string objects via strcmp() or alike.
@@ -36,8 +39,8 @@ int checkType(robj *o, int type) ;
  * Important note: if objects are not integer encoded, but binary-safe strings,
  * sdscmp() from sds.c will apply memcmp() so this function ca be considered
  * binary safe. */
-int compareStringObjects(robj *a, robj *b);
+int objectCompareSds(robj *a, robj *b);
 
-size_t stringObjectLen(robj *o);
+size_t objectSdsLen(robj *o);
 
 #endif // OBJECT_H

@@ -2,7 +2,7 @@
 #include "zmalloc.h"
 #include <stdio.h>
 
-robj *createObject(int type, void *ptr) {
+robj *objectCreate(int type, void *ptr) {
     robj *o = zmalloc(sizeof(*o));
     o->type = type;
     o->ptr = ptr;
@@ -20,26 +20,35 @@ robj *createObject(int type, void *ptr) {
     return o;
 }
 
-robj *createStringObject(char *ptr, size_t len) {
-    return createObject(CCACHE_STRING,sdsnewlen(ptr,len));
+robj *objectCreateNULL() {
+    return objectCreate(OBJ_NULL,NULL);
 }
 
-robj *dupStringObject(robj *o) {
-    return createStringObject(o->ptr,sdslen(o->ptr));
+robj *objFromSds(sds ptr) {
+    return objectCreate(OBJ_SDS,ptr);
 }
 
 
-void incrRefCount(robj *o) {
+robj *objFromChar(char *ptr, size_t len) {
+    return objectCreate(OBJ_SDS,sdsnewlen(ptr,len));
+}
+
+robj *objectDupSds(robj *o) {
+    return objFromChar(o->ptr,sdslen(o->ptr));
+}
+
+
+void objectIncrRef(robj *o) {
     o->refcount++;
 }
 
-void decrRefCount(void *obj) {
+void objectDecrRef(void *obj) {
     robj *o = obj;
 
     if (o->refcount <= 0) printf("decrRefCount against refcount <= 0\n");
     if (o->refcount == 1) {
         switch(o->type) {
-        case CCACHE_STRING: sdsfree(o->ptr);; break;
+        case OBJ_SDS: sdsfree(o->ptr);; break;
         default: printf("Unknown object type\n"); break;
         }
         zfree(o);
@@ -60,13 +69,13 @@ int checkType(robj *o, int type) {
  * Important note: if objects are not integer encoded, but binary-safe strings,
  * sdscmp() from sds.c will apply memcmp() so this function ca be considered
  * binary safe. */
-int compareStringObjects(robj *a, robj *b) {
-    assert(a->type == CCACHE_STRING && b->type == CCACHE_STRING);
+int objectCompareSds(robj *a, robj *b) {
+    assert(a->type == OBJ_SDS && b->type == OBJ_SDS);
     return sdscmp((sds)a->ptr,(sds)b->ptr);
 }
 
-size_t stringObjectLen(robj *o) {
-    assert(o->type == CCACHE_STRING);
+size_t objectSdsLen(robj *o) {
+    assert(o->type == OBJ_SDS);
     return sdslen(o->ptr);
 }
 /* Given an object returns the min number of seconds the object was never

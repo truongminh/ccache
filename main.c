@@ -1,13 +1,15 @@
 #include <stdio.h>
+#include <pthread.h>
+#include <stdlib.h>
 #include "ae.h"
 #include "anet.h"
-#include <stdlib.h>
 #include "client.h"
+#include "cache.h"
 #include "signal_handler.h"
-#include <pthread.h>
+#include "request_handler.h"
 
 
-#define NUM_THREADS     1
+#define NUM_THREADS     4
 
 struct aeEventLoop server; /* server global state */
 
@@ -15,6 +17,8 @@ struct aeEventLoop server; /* server global state */
 /* We received a SIGTERM,  shuttingdown here in a safe way, as it is
  * not ok doing so inside the signal handler. */
 int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientDat){
+    (void)id;
+    (void)clientDat;
     /*if (server.shutdown_asap) {
         if (prepareForShutdown() == CCACHE_OK) exit(0);
         redisLog(CCACHE_WARNING,"SIGTERM received but errors trying to shut down the server, check the logs for more information");
@@ -24,6 +28,19 @@ int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientDat){
 #ifdef AE_MAX_IDLE_TIME
     if ((eventLoop->maxidletime && !(eventLoop->loop % 10)))
         closeTimedoutClients(eventLoop);
+    if(eventLoop->myid > 0){
+        cacheMsg *msg;
+        while((msg = cacheGetMessage(eventLoop->cache))){
+            if(msg->key)
+            {
+                if(msg->obj == NULL) dictDelete(eventLoop->cache,msg->key);
+                else {
+                    if(checkType(msg->obj,OBJ_SDS))
+                        unblockClient(eventLoop,msg->key,msg->obj);
+                }
+            }
+        }
+    }
 #endif
     return 100;
 }
@@ -31,6 +48,7 @@ int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientDat){
 void *aeMainThread(void *eventloop)
 {
    aeEventLoop *el = eventloop;
+   el->cache = cacheCreate();
    aeMain(el);
    aeDeleteEventLoop(el);
    free(el);
@@ -48,12 +66,12 @@ void initMaster(aeEventLoop *el, int numslave)
 int main(void)
 {    
      setupSignalHandlers();
+     requestHandleInitializeGlobalCache();
      aeEventLoop *el = aeCreateEventLoop();
      initMaster(el,NUM_THREADS);
      pthread_t threads[NUM_THREADS];
      int rc;
      long t;
-     printf("Main pthread_self %x\n",pthread_self());
      for(t=0; t<NUM_THREADS; t++){
        printf("In main: creating thread %ld\n", t);
        aeEventLoop *slave = aeCreateEventLoop();

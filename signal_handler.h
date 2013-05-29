@@ -135,6 +135,7 @@ static void sigsegvHandler(int sig, siginfo_t *info, void *secret) {
 
 static void sigtermHandler(int sig) {
     printf("Received SIGTERM, scheduling shutdown...");
+    (void)sig;
     //redisLog(CCACHE_WARNING,"Received SIGTERM, scheduling shutdown...");
     //server.shutdown_asap = 1;
 }
