@@ -123,6 +123,6 @@ void *dictFetchValue(dict *d, const void *key);
 dictIterator *dictGetIterator(dict *ht);
 dictEntry *dictNext(dictIterator *iter);
 void dictReleaseIterator(dictIterator *iter);
-
+dictEntry *dictAddGetDictEntry(dict *ht, void *key, void *val);
 
 #endif /* __DICT_H */

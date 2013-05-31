@@ -12,7 +12,7 @@
 
 void requestHandleInitializeGlobalCache();
 
-int requestHandle(request *req, reply *rep, ccache *c);
+int requestHandle(request *req, reply *rep, ccache *c, void *client);
 
 void requestHandleError(request *req, reply *rep);
 

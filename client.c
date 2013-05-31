@@ -6,13 +6,15 @@
 #include "request_handler.h"
 
 static int _installWriteEvent(aeEventLoop *el, httpClient *c);
-static int blockClient(dict *bclients, sds key, httpClient *c);
+static int _installReadEvent(aeEventLoop *el, httpClient *c);
+static void blockClient(aeEventLoop *el, httpClient *c);
 /* -----------------------------------------------------------------------------
  * Low level functions to accept connection and create new clients
  * -------------------------------------------------------------------------- */
 static aeEventLoop *nextClient(aeEventLoop* el){
     int current_id = el->nextSlaveID;
     el->nextSlaveID++;
+    printf("ID %d \n",current_id);
     if (el->nextSlaveID == el->numslave) el->nextSlaveID = 0;
     return el->slaves[current_id];
 }
@@ -40,7 +42,8 @@ void acceptTcpHandler(aeEventLoop *el, int fd, void *privdata, int mask) {
      * We may Change el to one from workers.
      */
     aeEventLoop *nextEL = nextClient(el);
-    if ((c = createClient(nextClient(el),cfd,cip,cport)) == NULL) {
+    printf("event loop %p\n",nextEL);
+    if ((c = createClient(nextEL,cfd,cip,cport)) == NULL) {
         rLog(CCACHE_WARNING,"Error allocating resoures for the client");
         freeClient(nextEL,c); /* May be already closed, just ingore errors */
         return;
@@ -87,7 +90,6 @@ void readQueryFromClient(aeEventLoop *el, int fd, void *privdata, int mask) {
     if(c->node == NULL) c->node = listAddNodeTailGetNode(el->clients,c);
     char buf[CCACHE_IOBUF_LEN];
     int nread;
-    CCACHE_NOTUSED(el);
     CCACHE_NOTUSED(mask);
     nread = read(fd, buf, CCACHE_IOBUF_LEN);
     if (nread == -1) {
@@ -112,20 +114,16 @@ void readQueryFromClient(aeEventLoop *el, int fd, void *privdata, int mask) {
             break;
         case parse_completed:
         {
-            int handle_result = requestHandle(c->req,c->rep,el->cache);
+            int handle_result = requestHandle(c->req,c->rep,el->cache,c);
             if(handle_result == HANDLER_BLOCK){
-                if(blockClient(el->bclients,c->req->uri,c) == CCACHE_ERR){
-                     if (_installWriteEvent(el, c) != CCACHE_OK) return;
-                     requestHandleError(c->req,c->rep);
-                }
+                blockClient(el,c);
             }
             else {
                 if (_installWriteEvent(el, c) != CCACHE_OK) return;
-                if(handle_result == HANDLER_ERR)
-                    requestHandleError(c->req,c->rep);
                 /* For HANDLE_OK there is nothing to do */
+                if(handle_result == HANDLER_ERR) requestHandleError(c->req,c->rep);
             }
-            break;
+                break;
         }
         case parse_error:
             if (_installWriteEvent(el, c) != CCACHE_OK) {
@@ -139,15 +137,6 @@ void readQueryFromClient(aeEventLoop *el, int fd, void *privdata, int mask) {
     }
 }
 
-/* Set the event loop to listen for write events on the client's socket.
- * Typically gets called every time a reply is built. */
-int _installWriteEvent(aeEventLoop *el, httpClient *c) {
-    if (c->fd <= 0) return CCACHE_ERR;
-    if (aeCreateFileEvent(el, c->fd, AE_WRITABLE,sendReplyToClient, c) == AE_ERR)
-        return CCACHE_ERR;
-    return CCACHE_OK;
-}
-
 void sendReplyToClient(aeEventLoop *el, int fd, void *privdata, int mask) {
     httpClient *c = privdata;
     int nwritten = 0;
@@ -155,23 +144,25 @@ void sendReplyToClient(aeEventLoop *el, int fd, void *privdata, int mask) {
     CCACHE_NOTUSED(el);
     CCACHE_NOTUSED(mask);
     // if (totwritten > REDIS_MAX_WRITE_PER_EVENT)
-    sds obuf = replyToBuffer(c->rep);    
-    nwritten = write(fd, obuf,sdslen(obuf));
-    /* Content */
-    if (nwritten == -1) {
-        if (errno == EAGAIN) {
-            nwritten = 0;
-        } else {
-            rLog(CCACHE_VERBOSE,
-                 "Error writing to client: %s", strerror(errno));
-            freeClient(el,c);
-            return;
+    sds obuf = replyToBuffer(c->rep);
+    if(obuf) {
+        nwritten = write(fd, obuf,sdslen(obuf));
+        /* Content */
+        if (nwritten == -1) {
+            if (errno == EAGAIN) {
+                nwritten = 0;
+            } else {
+                rLog(CCACHE_VERBOSE,
+                     "Error writing to client: %s", strerror(errno));
+                freeClient(el,c);
+                return;
+            }
         }
+        c->lastinteraction = time(NULL);
+        listMoveNodeToTail(el->clients,c->node);
+        resetClient(c);
+        aeDeleteFileEvent(el,c->fd,AE_WRITABLE);
     }
-    c->lastinteraction = time(NULL);
-    listMoveNodeToTail(el->clients,c->node);
-    resetClient(c);
-    aeDeleteFileEvent(el,c->fd,AE_WRITABLE);
 }
 
 void freeClient(aeEventLoop *el, httpClient *c) {
@@ -224,42 +215,37 @@ int closeTimedoutClients(aeEventLoop *el) {
 
 #endif
 
-
-int blockClient(dict *bclients, sds key, httpClient *c)
+void blockClient(aeEventLoop *el, httpClient *c)
 {
-    /* And in the other "side", to map keys -> clients */
-    dictEntry *de = dictFind(bclients,key);
-    list *l;
-    if (de == NULL) {
-        /* For every key we take a list of clients blocked for it */
-        l = listCreate();
-        if(dictAdd(bclients,key,l) == DICT_ERR)
-            return CCACHE_ERR;
-    } else {
-        l = dictGetEntryVal(de);
-    }
-    listAddNodeTail(l,c);
-    c->blocked = 1;
+    (void)el;
+    /*Problem with Client Connection: aeDeleteFileEvent(el,c->fd,AE_READABLE);*/
+    c->blocked = 1;    
+}
+
+void unblockClient(aeEventLoop *el, httpClient *c, sds obuf)
+{
+    if(_installWriteEvent(el,c) == CCACHE_OK ||
+            _installReadEvent(el,c) == CCACHE_OK)
+        c->blocked = 0;
+    c->rep->obuf = obuf;
+}
+
+
+/* Set the event loop to listen for write events on the client's socket.
+ * Typically gets called every time a reply is built. */
+int _installWriteEvent(aeEventLoop *el, httpClient *c) {
+    if (c->fd <= 0) return CCACHE_ERR;
+    if (aeCreateFileEvent(el, c->fd, AE_WRITABLE,sendReplyToClient, c) == AE_ERR)
+        return CCACHE_ERR;
     return CCACHE_OK;
 }
 
-void unblockClient(aeEventLoop *el, sds key, robj *obj)
-{
-    /* And in the other "side", to map keys -> clients */
-    dictEntry *de = dictFind(el->bclients,key);
-    listIter li;
-    listNode *ln;
-    if (de) {
-        list *l = dictGetEntryVal(de);
-        listRewind(l,&li);
-        while ((ln = listNext(&li)) != NULL) {
-            httpClient *c = listNodeValue(ln);
-            c->rep->obuf = obj->ptr;
-            c->blocked = 0;
-            if (_installWriteEvent(el, c) != CCACHE_OK) {
-                freeClient(el,c);
-            }
-        }
-        dictDelete(el->bclients,key);
-    }
+
+/* Set the event loop to listen for write events on the client's socket.
+ * Typically gets called every time a reply is built. */
+int _installReadEvent(aeEventLoop *el, httpClient *c) {
+    if (c->fd <= 0) return CCACHE_ERR;
+    if (aeCreateFileEvent(el, c->fd, AE_READABLE,readQueryFromClient, c) == AE_ERR)
+        return CCACHE_ERR;
+    return CCACHE_OK;
 }

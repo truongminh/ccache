@@ -2,7 +2,8 @@
 
 safeList * safeListCreate() {
     safeList *sl = malloc(sizeof(*sl));
-    sl->head = sl->tail = malloc(sizeof(safeListNode));
+    sl->head = NULL;
+    sl->tail = malloc(sizeof(safeListNode));
     sl->tail->next = NULL;
     sl->free = NULL;
     return sl;
@@ -43,7 +44,7 @@ int safeListAddNodeTail(safeList *ll, void *value) {
 
 
 void * safeListGetHead(safeList *ll) {
-    if(ll->head == NULL) return NULL;
+    if(ll->head == NULL) return NULL;    
     void* re = ll->head->value;
     safeListNode *ln = ll->head;
     if(ll->head->next) free(ln);

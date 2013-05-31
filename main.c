@@ -9,7 +9,7 @@
 #include "request_handler.h"
 
 
-#define NUM_THREADS     4
+#define NUM_THREADS    4
 
 struct aeEventLoop server; /* server global state */
 
@@ -28,19 +28,6 @@ int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientDat){
 #ifdef AE_MAX_IDLE_TIME
     if ((eventLoop->maxidletime && !(eventLoop->loop % 10)))
         closeTimedoutClients(eventLoop);
-    if(eventLoop->myid > 0){
-        cacheMsg *msg;
-        while((msg = cacheGetMessage(eventLoop->cache))){
-            if(msg->key)
-            {
-                if(msg->obj == NULL) dictDelete(eventLoop->cache,msg->key);
-                else {
-                    if(checkType(msg->obj,OBJ_SDS))
-                        unblockClient(eventLoop,msg->key,msg->obj);
-                }
-            }
-        }
-    }
 #endif
     return 100;
 }
@@ -48,7 +35,6 @@ int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientDat){
 void *aeMainThread(void *eventloop)
 {
    aeEventLoop *el = eventloop;
-   el->cache = cacheCreate();
    aeMain(el);
    aeDeleteEventLoop(el);
    free(el);
@@ -67,6 +53,7 @@ int main(void)
 {    
      setupSignalHandlers();
      requestHandleInitializeGlobalCache();
+     cacheMasterInit();
      aeEventLoop *el = aeCreateEventLoop();
      initMaster(el,NUM_THREADS);
      pthread_t threads[NUM_THREADS];
@@ -77,7 +64,8 @@ int main(void)
        aeEventLoop *slave = aeCreateEventLoop();
        slave->myid = t+1;
        aeCreateTimeEvent(slave, 2000, serverCron, NULL, NULL);
-       el->slaves[t] = slave;
+       slave->cache = cacheAddSlave(slave);
+       el->slaves[t] = slave;       
        rc = pthread_create(&threads[t], NULL, aeMainThread, slave);
        if (rc){
           printf("ERROR; return code from pthread_create() is %d\n", rc);
@@ -93,11 +81,11 @@ int main(void)
         printf("Opening port %d: %s",port, neterr);
         exit(1);
     }
-    //aeCreateTimeEvent(el, 1, serverCron, NULL, NULL);
+    //aeCreateTimeEvent(el, 2000, serverCron, NULL, NULL);
     if (ipfd > 0 && aeCreateFileEvent(el,ipfd,AE_READABLE,acceptTcpHandler,NULL) == AE_ERR)
         printf("creating file event\n");
     if (ipfd > 0)
-        printf("The server is now ready to accept connections on port %d",port);    
+        printf("The server is now ready to accept connections on port %d\n",port);
     aeMain(el);
     aeDeleteEventLoop(el);
     free(el);

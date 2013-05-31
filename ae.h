@@ -37,7 +37,7 @@
 #include "dict.h"
 
 #define AE_MAX_CLIENT 30000
-#define AE_MAX_IDLE_TIME 10 /* seconds */
+#define AE_MAX_IDLE_TIME 1 /* seconds */
 
 #define AE_SETSIZE (1024*10)    /* Max number of fd supported */
 

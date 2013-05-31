@@ -16,7 +16,8 @@ SOURCES += \
     request.c \
     cache.c \
     request_handler.c \
-    safe_list.c
+    safe_list.c \
+    objSds.c
 
 HEADERS += \
     dict.h \
@@ -35,7 +36,8 @@ HEADERS += \
     request.h \
     cache.h \
     request_handler.h \
-    safe_list.h
+    safe_list.h \
+    objSds.h
 
 
 

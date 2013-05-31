@@ -1,3 +1,4 @@
+#include <malloc.h>
 #include "request.h"
 #include "dicttype.h"
 #include "ctype.h"

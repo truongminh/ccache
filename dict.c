@@ -343,3 +343,25 @@ static int _dictKeyIndex(dict *ht, const void *key) {
     }
     return h;
 }
+
+/* Add an element to the target hash table */
+dictEntry *dictAddGetDictEntry(dict *ht, void *key, void *val) {
+    int index;
+    dictEntry *entry;
+
+    /* Get the index of the new element, or -1 if
+     * the element already exists. */
+    if ((index = _dictKeyIndex(ht, key)) == -1)
+        return NULL;
+
+    /* Allocates the memory and stores key */
+    entry = malloc(sizeof(*entry));
+    entry->next = ht->table[index];
+    ht->table[index] = entry;
+
+    /* Set the hash entry fields. */
+    dictSetHashKey(ht, entry, key);
+    dictSetHashVal(ht, entry, val);
+    ht->used++;
+    return entry;
+}
