@@ -17,13 +17,13 @@ typedef struct cacheEntry {
     dictEntry *de;
     listNode *ln;
     void *val;
-    safeList *waiting_clients;
+    safeQueue *waiting_clients;
 } cacheEntry;
 
 typedef struct {
     dict *data;
-    safeList *forOld;
-    safeList *forNew;
+    safeQueue *forOld;
+    safeQueue *forNew;
     list *accesslist;    
     void *el;
 } ccache;

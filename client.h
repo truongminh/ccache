@@ -84,6 +84,7 @@ void acceptTcpHandler(aeEventLoop *el, int fd, void *privdata, int mask);
 void readQueryFromClient(aeEventLoop *el, int fd, void *privdata, int mask);
 
 void unblockClient(aeEventLoop *el, httpClient *c, sds obuf);
+void unblockClientNotFound(aeEventLoop *el, httpClient *c);
 
 /*
 #if defined(__GNUC__)

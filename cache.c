@@ -15,7 +15,7 @@ static dict *master_cache;
 static list *slave_caches;
 static void *watch_cache(void *t);
 
-void unwatch_client(void *el, safeList* watching_clients, sds obuf);
+void unwatch_client(void *el, safeQueue* watching_clients, sds obuf);
 
 void cacheMasterInit() {
     pthread_attr_t attr;
@@ -82,11 +82,18 @@ void *watch_cache(void *t)
     pthread_exit(NULL);
 }
 
-void unwatch_client(void *el, safeList* watching_clients, sds obuf) {
+void unwatch_client(void *el, safeQueue* watching_clients, sds obuf) {
     httpClient *client;
-    while((client = safeListGetHead(watching_clients)) != NULL) {
+    while((client = safeQueuePop(watching_clients)) != NULL) {
         unblockClient(el,client,obuf);
         /* */
+    }
+}
+
+void unwatchClientNotFound(void *el, safeQueue* watching_clients) {
+    httpClient *client;
+    while((client = safeQueuePop(watching_clients)) != NULL) {
+        unblockClientNotFound(el,client);
     }
 }
 
@@ -113,8 +120,8 @@ ccache *cacheCreate() {
     ccache *c = malloc(sizeof(*c));
     c->accesslist = listCreate();
     c->data = dictCreate(&ccacheType,NULL);
-    c->forOld = safeListCreate();
-    c->forNew = safeListCreate();
+    c->forOld = safeQueueCreate();
+    c->forNew = safeQueueCreate();
     return c;
 }
 
@@ -134,7 +141,7 @@ cacheEntry *cacheAdd(ccache *c, sds key, void *value) {
         free(ce);
         return NULL;
     }
-    ce->waiting_clients = safeListCreate();
+    ce->waiting_clients = safeQueueCreate();
     ce->de->val = ce;
     ce->val = value;
     return ce;
@@ -189,20 +196,20 @@ int cacheDeleteStaleEntries(ccache *c, unsigned int n) {
 
 int cacheSendMessage(ccache *c, cacheEntry *ce, int forWhom){
     if(forWhom == CACHE_NEW)
-        return (safeListAddNodeTail(c->forNew,ce) == SAFE_LIST_OK)? CACHE_OK:CACHE_ERR;
+        return (safeQueuePush(c->forNew,ce) == SAFE_QUEUE_OK)? CACHE_OK:CACHE_ERR;
     if(forWhom == CACHE_OLD)
-        return (safeListAddNodeTail(c->forOld,ce) == SAFE_LIST_OK)? CACHE_OK:CACHE_ERR;
+        return (safeQueuePush(c->forOld,ce) == SAFE_QUEUE_OK)? CACHE_OK:CACHE_ERR;
     return CACHE_ERR;
 }
 
 cacheEntry *cacheGetMessage(ccache *c, int forWhom){
     if(forWhom == CACHE_NEW)
-        return safeListGetHead(c->forNew);
+        return safeQueuePop(c->forNew);
     if(forWhom== CACHE_OLD)
-        return safeListGetHead(c->forOld);
+        return safeQueuePop(c->forOld);
     return NULL;
 }
 
 void cacheAddWatchClient(cacheEntry *ce, httpClient *client) {
-    safeListAddNodeTail(ce->waiting_clients,client);
+    safeQueuePush(ce->waiting_clients,client);
 }

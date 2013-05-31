@@ -17,7 +17,7 @@ reply* replyCreate() {
 void replyFree(reply* r) {
     dictRelease(r->headers);
     sdsfree(r->content);
-    if(r->obuf) sdsfree(r->obuf);
+    if(r->obuf&&r->isCached == 0) sdsfree(r->obuf);
     free(r);
 }
 

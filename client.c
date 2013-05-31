@@ -202,7 +202,7 @@ int closeTimedoutClients(aeEventLoop *el) {
                     (now - c->lastinteraction > el->maxidletime))
             {
                 rLog(CCACHE_VERBOSE,"Closing idle client");
-                /* if (c->isblocked) */
+                /* if (c->isblocked) DONT FREE CLIENT */
                 freeClient(el,c);
                 deletedNodes++;
             }
@@ -224,10 +224,20 @@ void blockClient(aeEventLoop *el, httpClient *c)
 
 void unblockClient(aeEventLoop *el, httpClient *c, sds obuf)
 {
+    /* CRITICAL: Possible Data Race Conidtion */
     if(_installWriteEvent(el,c) == CCACHE_OK ||
             _installReadEvent(el,c) == CCACHE_OK)
         c->blocked = 0;
     c->rep->obuf = obuf;
+}
+
+void unblockClientNotFound(aeEventLoop *el, httpClient *c)
+{
+    /* CRITICAL: Possible Data Race Conidtion */
+    if(_installWriteEvent(el,c) == CCACHE_OK ||
+            _installReadEvent(el,c) == CCACHE_OK)
+        c->blocked = 0;
+    requestHandleError(c->req,c->rep);
 }
 
 
