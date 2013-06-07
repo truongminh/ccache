@@ -66,6 +66,6 @@ dictType objSdsDictType = {
     NULL,                       /* key dup */
     NULL,                       /* val dup */
     dictSdsKeyCompare,          /* key compare */
-    dictSdsDestructor,  /* key destructor */
-    dictListDestructor          /* val destructor */
+    dictSdsDestructor,          /* key destructor */
+    dictObjSdsDestructor/* val destructor */
 };

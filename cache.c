@@ -1,3 +1,7 @@
+/*
+  I/O: sort request by block to reduce hard disk seek time.
+
+*/
 
 #include <pthread.h>
 #include <unistd.h>
@@ -6,6 +10,10 @@
 #include "string.h" /* for memcpy */
 #include "dicttype.h"
 #include "objSds.h"
+
+/*
+* long page_size = sysconf (_SC_PAGESIZE);
+*/
 
 static pthread_mutex_t count_mutex;
 static pthread_mutex_t mutex_gcache;
@@ -28,7 +36,7 @@ void cacheMasterInit() {
     /* For portability, explicitly create threads in a joinable state */
     pthread_attr_init(&attr);
     pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
-    master_cache = dictCreate(&sdsDictType,NULL);
+    master_cache = dictCreate(&objSdsDictType,NULL);
     slave_caches = listCreate();
     pthread_create(&master_thread, &attr, watch_cache, NULL);
 }
@@ -40,11 +48,19 @@ ccache *cacheAddSlave(void *el) {
     return c;
 }
 
+/*
+  The master works as a Complete-Fair Queuing (CFQ) I/O Scheduler.
+  The master visits each queue, servicing each request until
+   the queue's timeslice is exhausted, or until no more requests remain.
+  NOTE: current implemenetation does not check for a queue's timeslice
+*/
+
 void *watch_cache(void *t)
 {
     (void)t;
     ccache *c;
     cacheEntry *ce;
+    sds okey;
     while (1) {
         listIter li;
         listNode *ln;
@@ -56,7 +72,7 @@ void *watch_cache(void *t)
                 sds key = ce->de->key;
                 objSds *value = dictFetchValue(master_cache,key);
                 if(!value) {
-                    printf("Master \t Add new entry\n");
+                    printf("Master \t Add new entry %s\n",key);
                     value = objSdsFromSds(sdsnew("HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nOK"));
                     dictAdd(master_cache,sdsdup(key),value);
                 }
@@ -66,15 +82,15 @@ void *watch_cache(void *t)
                 /* Unblock waiting clients */
                 unwatch_client(c->el,ce->waiting_clients, ce->val);
             }
-            while((ce=cacheGetMessage(c,CACHE_OLD)) != NULL)
-            {
-                sds key = ce->de->key;
-                objSds *value = dictFetchValue(master_cache,key);
+            while((okey=cacheGetMessage(c,CACHE_OLD)) != NULL)
+            {                
+                objSds *value = dictFetchValue(master_cache,okey);
                 if(value) {
                     objSdsSubRef(value);
                     printf("OBJECT %p REF %d \n",value,value->ref);
-                    if(value->ref == 1) dictDelete(master_cache,key);
+                    if(value->ref == 1) dictDelete(master_cache,okey);
                 }
+                sdsfree(okey);
             }
         }
         usleep(100);
@@ -99,10 +115,8 @@ void unwatchClientNotFound(void *el, safeQueue* watching_clients) {
 
 void dictCacheEntryDestructor(void *privdata, void *val)
 {
-    DICT_NOTUSED(privdata);
-    cacheEntry *ce = (cacheEntry*)val;
-    free(ce->de->val);
-    free(ce);
+    DICT_NOTUSED(privdata);    
+    free(val);
 }
 
 
@@ -167,34 +181,26 @@ cacheEntry *cacheFind(ccache *c, sds key) {
 
 void cacheDelete(ccache* c, sds key) {
     cacheEntry *ce = (cacheEntry *)dictFetchValue(c->data,key);
+    cacheSendMessage(c,sdsdup(key),CACHE_OLD);
     listDelNode(c->accesslist,ce->ln);
-    dictDelete(c->data,key);
+    dictDelete(c->data,key);    
 }
 
-int cacheDeleteStaleEntries(ccache *c, unsigned int n) {
-    list *accesslist  = cacheGetList(c);
-    listNode *node = accesslist->head;
+int cacheDeleteStaleEntries(ccache *c, unsigned int n) {    
     unsigned int remain = n;
-    while(remain--&&node) {
-        if (node->prev)
-            node->prev->next = node->next;
-        else
-            accesslist->head = node->next;
-        if (node->next)
-            node->next->prev = node->prev;
-        else
-            accesslist->tail = node->prev;
-        /* Free cache Entry */
-        dictDelete(c->data,(sds)(node->value));
-        free(node);
-        accesslist->len--;
-        node = listNextNode(node); /* usage of node is unsafe */
+    listIter li;
+    listNode *ln;
+
+    listRewind(c->accesslist,&li);
+    while (remain-- && (ln = listNext(&li)) != NULL) {
+        sds key = listNodeValue(ln);
+        cacheDelete(c,key);
     }
     /* Return the number of successfully deleted entries */
     return n - remain;
 }
 
-int cacheSendMessage(ccache *c, cacheEntry *ce, int forWhom){
+int cacheSendMessage(ccache *c, void *ce, int forWhom){
     if(forWhom == CACHE_NEW)
         return (safeQueuePush(c->forNew,ce) == SAFE_QUEUE_OK)? CACHE_OK:CACHE_ERR;
     if(forWhom == CACHE_OLD)
@@ -202,7 +208,7 @@ int cacheSendMessage(ccache *c, cacheEntry *ce, int forWhom){
     return CACHE_ERR;
 }
 
-cacheEntry *cacheGetMessage(ccache *c, int forWhom){
+void *cacheGetMessage(ccache *c, int forWhom){
     if(forWhom == CACHE_NEW)
         return safeQueuePop(c->forNew);
     if(forWhom== CACHE_OLD)

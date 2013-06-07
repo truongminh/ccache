@@ -29,6 +29,9 @@ int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientDat){
     if ((eventLoop->maxidletime && !(eventLoop->loop % 10)))
         closeTimedoutClients(eventLoop);
 #endif
+    if(!(eventLoop->loop%50)) {
+        cacheDeleteStaleEntries(eventLoop->cache,1);
+    }
     return 100;
 }
 

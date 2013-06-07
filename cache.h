@@ -4,7 +4,7 @@
 #include "dict.h"
 #include "adlist.h"
 #include "object.h"
-#include "safe_list.h"
+#include "safe_queue.h"
 #include "client.h"
 
 #define CACHE_OK DICT_OK
@@ -38,8 +38,8 @@ void *cacheFetch(ccache *c, sds key);
 #define cacheNumberOfEntry(c) (c->used)
 
 int cacheRequest(ccache *c, sds key);
-int cacheSendMessage(ccache *c, cacheEntry *ce, int forWhom);
-cacheEntry *cacheGetMessage(ccache *c, int forWhom);
+int cacheSendMessage(ccache *c, void *ce, int forWhom);
+void *cacheGetMessage(ccache *c, int forWhom);
 
 void cacheMasterInit();
 ccache *cacheAddSlave(void *el);
