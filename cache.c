@@ -61,6 +61,9 @@ void *watch_cache(void *t)
     ccache *c;
     cacheEntry *ce;
     sds okey;
+    objSds *notfound = objSdsFromSds(sdsnew("HTTP/1.1 200 OK\r\nContent-Length: 9\r\n\r\nNot Found"));;
+    objSdsAddRef(notfound);
+    FILE *fp;
     while (1) {
         listIter li;
         listNode *ln;
@@ -72,8 +75,20 @@ void *watch_cache(void *t)
                 sds key = ce->de->key;
                 objSds *value = dictFetchValue(master_cache,key);
                 if(!value) {
-                    printf("Master \t Add new entry %s\n",key);
-                    value = objSdsFromSds(sdsnew("HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nOK"));
+                    printf("Master \t Add new entry [%s]\n",key);
+                    fp = fopen(key+1,"r");
+                    if(fp == NULL) {
+                        value = notfound;
+                    }
+                    else {
+                        char BUF[101];
+                        int nread = fread(BUF,1,100,fp);
+                        sds content = sdsempty();
+                        content = sdscatprintf(content,"HTTP/1.1 200 OK\r\nContent-Length: %d\r\n\r\n",nread);
+                        content = sdscatlen(content,BUF,nread);
+                        value = objSdsFromSds(content);
+                        fclose(fp);
+                    }
                     dictAdd(master_cache,sdsdup(key),value);
                 }
                 ce->val = value->ptr;
@@ -181,9 +196,15 @@ cacheEntry *cacheFind(ccache *c, sds key) {
 
 void cacheDelete(ccache* c, sds key) {
     cacheEntry *ce = (cacheEntry *)dictFetchValue(c->data,key);
-    cacheSendMessage(c,sdsdup(key),CACHE_OLD);
-    listDelNode(c->accesslist,ce->ln);
-    dictDelete(c->data,key);    
+    /* Master reply by setting val to an object.
+     * We do not delete cache entry until the master reply
+     */
+    if(ce&&ce->val)
+    {
+        cacheSendMessage(c,sdsdup(key),CACHE_OLD);
+        listDelNode(c->accesslist,ce->ln);
+        dictDelete(c->data,key);
+    }
 }
 
 int cacheDeleteStaleEntries(ccache *c, unsigned int n) {    
