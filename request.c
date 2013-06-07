@@ -29,7 +29,7 @@ request *requestCreate() {
     request* r;
     if((r = malloc(sizeof(*r))) == NULL) return NULL;
     r->method = sdsempty();
-    r->uri = sdsempty();
+    r->uri = sdsempty(); /* Accelerate append string time */
     r->headers = dictCreate(&sdsDictType,NULL);
     r->current_header_key = sdsempty();
     r->current_header_value = sdsempty();
@@ -94,7 +94,6 @@ request_parse_state requestParse(request* r, char* begin, char* end)
         case http_method:
             if (current == ' ')
             {
-                *ptr++='\0';
                 r->method = sdscatlen(r->method,buf,ptr-buf);
                 ptr=buf;
                 state = http_uri;
@@ -113,7 +112,6 @@ request_parse_state requestParse(request* r, char* begin, char* end)
         case http_uri:
             if (current == ' ')
             {
-                *ptr++='\0';
                 r->uri = sdscatlen(r->uri,buf,ptr-buf);
                 ptr=buf;
                 state = http_version_h;
@@ -281,7 +279,6 @@ request_parse_state requestParse(request* r, char* begin, char* end)
             }
             else if (r->headers->used>0 && (current == ' ' || current == '\t'))
             {
-                *ptr++='\0';
                 header_key = sdscatlen(header_key,buf,ptr-buf);
                 ptr=buf;
                 state = http_header_lws;
@@ -308,7 +305,6 @@ request_parse_state requestParse(request* r, char* begin, char* end)
         case http_header_lws:
             if (current == '\r')
             {
-                *ptr++='\0';
                 header_value = sdscatlen(header_value,buf,ptr-buf);
                 dictAdd(r->headers,header_key,header_value);
                 ptr=buf;
@@ -335,7 +331,6 @@ request_parse_state requestParse(request* r, char* begin, char* end)
         case http_header_name:
             if (current == ':') // end of header_name
             {
-                *ptr++='\0';
                 header_key = sdscatlen(header_key,buf,ptr-buf);
                 ptr=buf;
                 state = http_space_before_header_value;
@@ -368,7 +363,6 @@ request_parse_state requestParse(request* r, char* begin, char* end)
         case http_header_value:
             if (current == '\r')
             {
-                *ptr++='\0';
                 header_value= sdscatlen(header_value,buf,ptr-buf);
                 dictAdd(r->headers,header_key,header_value);
                 ptr=buf;
