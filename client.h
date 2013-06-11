@@ -42,6 +42,8 @@
 #define CCACHE_WARNING 3
 #define CCACHE_LOG_LEVEL 0
 
+#undef CCACHE_DEBUG
+
 /* Anti-warning macro... */
 #define CCACHE_NOTUSED(V) ((void) V)
 
@@ -58,6 +60,7 @@ typedef struct httpClient {
     time_t lastinteraction; /* time of the last interaction, used for timeout */
     listNode *node; /* point to the position this clients in its eventLoop's list of clients*/
     int blocked;
+    aeEventLoop *el;
 } httpClient;
 
 typedef struct {
@@ -83,8 +86,7 @@ void sendReplyToClient(aeEventLoop *el, int fd, void *privdata, int mask);
 void acceptTcpHandler(aeEventLoop *el, int fd, void *privdata, int mask);
 void readQueryFromClient(aeEventLoop *el, int fd, void *privdata, int mask);
 
-void unblockClient(aeEventLoop *el, httpClient *c, sds obuf);
-void unblockClientNotFound(aeEventLoop *el, httpClient *c);
+void unblockClient(httpClient *c, sds obuf);
 
 /*
 #if defined(__GNUC__)

@@ -17,7 +17,8 @@ SOURCES += \
     cache.c \
     request_handler.c \
     objSds.c \
-    safe_queue.c
+    safe_queue.c \
+    ufile.c
 
 HEADERS += \
     dict.h \
@@ -37,7 +38,8 @@ HEADERS += \
     cache.h \
     request_handler.h \
     objSds.h \
-    safe_queue.h
+    safe_queue.h \
+    ufile.h
 
 
 

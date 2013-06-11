@@ -29,7 +29,7 @@ int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientDat){
     if ((eventLoop->maxidletime && !(eventLoop->loop % 10)))
         closeTimedoutClients(eventLoop);
 #endif
-    if(!(eventLoop->loop%50)) {
+    if(!(eventLoop->loop%100)) {
         cacheDeleteStaleEntries(eventLoop->cache,1);
     }
     return 100;
@@ -63,7 +63,6 @@ int main(void)
      int rc;
      long t;
      for(t=0; t<NUM_THREADS; t++){
-       printf("In main: creating thread %ld\n", t);
        aeEventLoop *slave = aeCreateEventLoop();
        slave->myid = t+1;
        aeCreateTimeEvent(slave, 2000, serverCron, NULL, NULL);
@@ -71,7 +70,7 @@ int main(void)
        el->slaves[t] = slave;       
        rc = pthread_create(&threads[t], NULL, aeMainThread, slave);
        if (rc){
-          printf("ERROR; return code from pthread_create() is %d\n", rc);
+          printf("ERROR: return code from pthread_create() is %d\n", rc);
           exit(-1);
        }
     }
@@ -81,7 +80,7 @@ int main(void)
     char *bindaddr = "0.0.0.0";
     int ipfd = anetTcpServer(neterr,port,bindaddr);
     if (ipfd == ANET_ERR) {
-        printf("Opening port %d: %s",port, neterr);
+        printf("ERROR: Opening port %d: %s",port, neterr);
         exit(1);
     }
     //aeCreateTimeEvent(el, 2000, serverCron, NULL, NULL);

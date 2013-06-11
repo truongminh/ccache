@@ -10,35 +10,40 @@
 #include "string.h" /* for memcpy */
 #include "dicttype.h"
 #include "objSds.h"
+#include "ufile.h"
 
 /*
 * long page_size = sysconf (_SC_PAGESIZE);
 */
 
-static pthread_mutex_t count_mutex;
-static pthread_mutex_t mutex_gcache;
-static pthread_cond_t cond_newkey;
+#ifdef CCACHE_DEBUG
+    #define REPORT_MASTER_ADD_KEY(key) printf("Master \t Add new entry [%s]\n",key)
+#else
+    #define REPORT_MASTER_ADD_KEY(key) ;
+#endif
+
 static pthread_t master_thread;
 static dict *master_cache;
 static list *slave_caches;
-static void *watch_cache(void *t);
-
-void unwatch_client(void *el, safeQueue* watching_clients, sds obuf);
+static void *_masterWatch(void *t);
+objSds *HTTP_NOT_FOUND;
+void _masterUnwatchClient(safeQueue* watching_clients, sds obuf);
+void _masterProcessCacheNew(ccache *c);
+void _masterProcessCacheOld(ccache *c);
+void _masterProcessFinishedIO();
 
 void cacheMasterInit() {
     pthread_attr_t attr;
-
-    /* Initialize mutex and condition variable objects */
-    pthread_mutex_init(&count_mutex, NULL);
-    pthread_mutex_init(&mutex_gcache, NULL);
-    pthread_cond_init (&cond_newkey, NULL);
-
+    HTTP_NOT_FOUND = objSdsFromSds(sdsnew("HTTP/1.1 200 OK\r\nContent-Length: 9\r\n\r\nNot Found"));
+    objSdsAddRef(HTTP_NOT_FOUND);
+    /* Initialize mutex and condition variable objects */    
     /* For portability, explicitly create threads in a joinable state */
     pthread_attr_init(&attr);
     pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
     master_cache = dictCreate(&objSdsDictType,NULL);
     slave_caches = listCreate();
-    pthread_create(&master_thread, &attr, watch_cache, NULL);
+    pthread_create(&master_thread, &attr, _masterWatch, NULL);
+    bioInit();
 }
 
 ccache *cacheAddSlave(void *el) {
@@ -55,79 +60,116 @@ ccache *cacheAddSlave(void *el) {
   NOTE: current implemenetation does not check for a queue's timeslice
 */
 
-void *watch_cache(void *t)
+void *_masterWatch(void *t)
 {
     (void)t;
     ccache *c;
-    cacheEntry *ce;
-    sds okey;
-    objSds *notfound = objSdsFromSds(sdsnew("HTTP/1.1 200 OK\r\nContent-Length: 9\r\n\r\nNot Found"));;
-    objSdsAddRef(notfound);
-    FILE *fp;
-    while (1) {
-        listIter li;
-        listNode *ln;
+    listIter li;
+    listNode *ln;
+    while (1) {        
         listRewind(slave_caches,&li);
         while ((ln = listNext(&li)) != NULL) {
             c = listNodeValue(ln);
-            while((ce=cacheGetMessage(c,CACHE_NEW)) != NULL)
-            {
-                sds key = ce->de->key;
-                objSds *value = dictFetchValue(master_cache,key);
-                if(!value) {
-                    printf("Master \t Add new entry [%s]\n",key);
-                    fp = fopen(key+1,"r");
-                    if(fp == NULL) {
-                        value = notfound;
-                    }
-                    else {
-                        char BUF[101];
-                        int nread = fread(BUF,1,100,fp);
-                        sds content = sdsempty();
-                        content = sdscatprintf(content,"HTTP/1.1 200 OK\r\nContent-Length: %d\r\n\r\n",nread);
-                        content = sdscatlen(content,BUF,nread);
-                        value = objSdsFromSds(content);
-                        fclose(fp);
-                    }
-                    dictAdd(master_cache,sdsdup(key),value);
-                }
-                ce->val = value->ptr;
-                objSdsAddRef(value);
-                printf("OBJECT %p REF %d \n",value,value->ref);
-                /* Unblock waiting clients */
-                unwatch_client(c->el,ce->waiting_clients, ce->val);
-            }
-            while((okey=cacheGetMessage(c,CACHE_OLD)) != NULL)
-            {                
-                objSds *value = dictFetchValue(master_cache,okey);
-                if(value) {
-                    objSdsSubRef(value);
-                    printf("OBJECT %p REF %d \n",value,value->ref);
-                    if(value->ref == 1) dictDelete(master_cache,okey);
-                }
-                sdsfree(okey);
-            }
+            _masterProcessCacheNew(c);
+            _masterProcessFinishedIO();
+            _masterProcessCacheOld(c);
         }
         usleep(100);
     }
     pthread_exit(NULL);
 }
 
-void unwatch_client(void *el, safeQueue* watching_clients, sds obuf) {
+void _masterUnwatchClient(safeQueue* watching_clients, sds obuf) {
     httpClient *client;
     while((client = safeQueuePop(watching_clients)) != NULL) {
-        unblockClient(el,client,obuf);
+        unblockClient(client,obuf);
         /* */
     }
 }
 
-void unwatchClientNotFound(void *el, safeQueue* watching_clients) {
-    httpClient *client;
-    while((client = safeQueuePop(watching_clients)) != NULL) {
-        unblockClientNotFound(el,client);
+void _masterProcessCacheNew(ccache *c){
+    cacheEntry *ce;
+    while((ce=cacheGetMessage(c,CACHE_NEW)) != NULL)
+    {
+        sds key = ce->de->key;
+        objSds *value = dictFetchValue(master_cache,key);
+        if(!value) {
+            REPORT_MASTER_ADD_KEY(key);
+            value = objSdsCreate();
+            /* Add cache entry to waiting list */
+            objSdsAddWaitingEntry(value,ce);
+            /* Add entry to master cache */
+            sds mkey = sdsdup(key); /* master must have its own key for its own cache */
+            /* Every when accept new ce, the obj ref is increased */
+            objSdsAddRef(value);
+            dictAdd(master_cache,mkey,value);
+            /* New IO Job */
+            bioCreateBackgroundJob(0,mkey);
+            OBJ_REPORT_REF(value);
+        }
+        else {
+            switch(value->state) {
+            case OBJSDS_WAITING:
+                /* Every when accept new ce, the obj ref is increased */
+                objSdsAddRef(value);
+                objSdsAddWaitingEntry(value,ce);
+                break;
+            case OBJSDS_OK:
+                ce->val = value->ptr;
+                /* Every when accept new ce, the obj ref is increased */
+                objSdsAddRef(value);
+                /* Unblock waiting clients */
+                _masterUnwatchClient(ce->waiting_clients, ce->val);
+                break;
+            default:
+                /* Error Unknown Object State */
+                break;
+            }
+            OBJ_REPORT_REF(value);
+        }
     }
 }
 
+void _masterProcessFinishedIO() {
+    sds key = NULL;
+    sds content = NULL;
+    /* For each IO worker */
+    int tid = 0;
+    for(tid=0;tid<CCACHE_NUM_IO_THREADS;tid++) {
+        while(bioGetResult(tid,&key,&content))
+        {
+            objSds *value = dictFetchValue(master_cache,key);
+            if(content == NULL) value->ptr = HTTP_NOT_FOUND->ptr;
+            else value->ptr = content;
+            value->state = OBJSDS_OK;
+            listIter li;
+            listNode *ln;
+            cacheEntry *ce;
+            listRewind(value->waiting_entries,&li);
+            /* for each waiting ce */
+            while ((ln = listNext(&li)) != NULL){
+                /* unwatch client */
+                ce = listNodeValue(ln);
+                ce->val = value->ptr;
+                _masterUnwatchClient(ce->waiting_clients, ce->val);
+            }
+        }
+        }
+}
+
+void _masterProcessCacheOld(ccache *c){
+    sds old_key;
+    while((old_key=cacheGetMessage(c,CACHE_OLD)) != NULL)
+    {
+        objSds *value = dictFetchValue(master_cache,old_key);
+        if(value) {
+            objSdsSubRef(value);
+            OBJ_REPORT_REF(value);
+            if(value->ref == 1) dictDelete(master_cache,old_key);
+        }
+        sdsfree(old_key);
+    }
+}
 void dictCacheEntryDestructor(void *privdata, void *val)
 {
     DICT_NOTUSED(privdata);    

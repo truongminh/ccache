@@ -54,6 +54,11 @@ static inline size_t sdsavail(const sds s) {
     return sh->free;
 }
 
+static inline void sdsaddlen(const sds s, size_t add) {
+    struct sdshdr *sh = (void*)(s-(sizeof(struct sdshdr)));
+    sh->len += add;
+}
+
 sds sdsnewlen(const void *init, size_t initlen);
 sds sdsnew(const char *init);
 sds sdsempty();
@@ -76,6 +81,7 @@ sds sdscatprintf(sds s, const char *fmt, ...)
 sds sdscatprintf(sds s, const char *fmt, ...);
 #endif
 
+sds sdsMakeRoomFor(sds s, size_t addlen) ;
 sds sdstrim(sds s, const char *cset);
 sds sdsrange(sds s, int start, int end);
 void sdsupdatelen(sds s);

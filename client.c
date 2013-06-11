@@ -14,7 +14,6 @@ static void blockClient(aeEventLoop *el, httpClient *c);
 static aeEventLoop *nextClient(aeEventLoop* el){
     int current_id = el->nextSlaveID;
     el->nextSlaveID++;
-    printf("ID %d \n",current_id);
     if (el->nextSlaveID == el->numslave) el->nextSlaveID = 0;
     return el->slaves[current_id];
 }
@@ -41,8 +40,7 @@ void acceptTcpHandler(aeEventLoop *el, int fd, void *privdata, int mask) {
     /* This el is from the master.
      * We may Change el to one from workers.
      */
-    aeEventLoop *nextEL = nextClient(el);
-    printf("event loop %p\n",nextEL);
+    aeEventLoop *nextEL = nextClient(el);    
     if ((c = createClient(nextEL,cfd,cip,cport)) == NULL) {
         rLog(CCACHE_WARNING,"Error allocating resoures for the client");
         freeClient(nextEL,c); /* May be already closed, just ingore errors */
@@ -76,6 +74,7 @@ httpClient *createClient(aeEventLoop *el, int fd, const char* ip, int port) {
     c->port = port;
     c->node = NULL;
     c->blocked = 0;
+    c->el = el;
     if (aeCreateFileEvent(el,fd,AE_READABLE,readQueryFromClient, c) == AE_ERR)
     {
         close(fd);
@@ -222,24 +221,13 @@ void blockClient(aeEventLoop *el, httpClient *c)
     c->blocked = 1;    
 }
 
-void unblockClient(aeEventLoop *el, httpClient *c, sds obuf)
+void unblockClient(httpClient *c, sds obuf)
 {
     /* CRITICAL: Possible Data Race Conidtion */
-    if(_installWriteEvent(el,c) == CCACHE_OK ||
-            _installReadEvent(el,c) == CCACHE_OK)
+    if(_installWriteEvent(c->el,c) == CCACHE_OK)
         c->blocked = 0;
     c->rep->obuf = obuf;
 }
-
-void unblockClientNotFound(aeEventLoop *el, httpClient *c)
-{
-    /* CRITICAL: Possible Data Race Conidtion */
-    if(_installWriteEvent(el,c) == CCACHE_OK ||
-            _installReadEvent(el,c) == CCACHE_OK)
-        c->blocked = 0;
-    requestHandleError(c->req,c->rep);
-}
-
 
 /* Set the event loop to listen for write events on the client's socket.
  * Typically gets called every time a reply is built. */

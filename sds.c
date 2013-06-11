@@ -99,7 +99,7 @@ void sdsclear(sds s) {
     sh->buf[0] = '\0';
 }
 
-static sds sdsMakeRoomFor(sds s, size_t addlen) {
+sds sdsMakeRoomFor(sds s, size_t addlen) {
     struct sdshdr *sh, *newsh;
     size_t free = sdsavail(s);
     size_t len, newlen;
