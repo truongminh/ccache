@@ -1,9 +1,11 @@
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <errno.h>
 #include <stdio.h>
 #include <unistd.h>
 #include <pthread.h>
 #include <stdlib.h>
+#include <string.h> /* strerror */
 #include "ufile.h"
 #include "adlist.h"
 #include "safe_queue.h"
@@ -154,18 +156,38 @@ sds makeHttpReplyFromFile(char* fn)
         perror ("stat");
         return NULL;
     }
-    unsigned long size = fs.st_size;
+    size_t size = fs.st_size;
+
     /* if(size>1024*1024) return NULL; */
-    sds content = sdsempty();
-    sdsMakeRoomFor(content,50+size);
+    sds content = sdsempty();        
     content = sdscatprintf(content,"HTTP/1.1 200 OK\r\nContent-Length: %ld\r\n\r\n",size);
-    unsigned long nread = read(fd, content+sdslen(content), size);
+    content = sdsMakeRoomFor(content,size);
+    size_t before = sdslen(content);
+    char* ptr = content + sdslen(content);
+
+    size_t remain = size;
+    ssize_t nread;
+    while(remain > 0 && (nread = read(fd, ptr, remain) != 0)) {
+        if(nread == -1) {
+            printf("ERROR: %s\n",strerror(errno));
+            if(errno == EINTR) { /* if the read syscall is interruptted, the program reissues it */
+                continue;
+            }
+            break;
+        }
+        remain -= nread;
+        /* nread may be smaller than the actual number of read bytes
+         * This make remain unsafe when it is outside of the loop
+         * However, we still use 'remain' to ensure that enough data was read.
+         */
+        ptr += nread;
+    }
     close(fd);
-    if(nread == 0) {
+    if(sdslen(content)-before < size) {
         sdsfree(content);
         return NULL;
     }
-    sdsaddlen(content,nread);
+    sdsaddlen(content,size);
     /* printf("==== Content ====  \n%s\n",content); */
     return content;
 }

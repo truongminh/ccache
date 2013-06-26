@@ -19,7 +19,7 @@
 #ifdef CCACHE_DEBUG
     #define REPORT_MASTER_ADD_KEY(key) printf("Master \t Add new entry [%s]\n",key)
 #else
-    #define REPORT_MASTER_ADD_KEY(key) ;
+    #define REPORT_MASTER_ADD_KEY(key) ; /* just ignore */
 #endif
 
 static pthread_t master_thread;
