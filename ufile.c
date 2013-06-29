@@ -27,6 +27,10 @@ void *bioProcessBackgroundJobs(void *arg);
  * main thread. */
 #define CCACHE_THREAD_STACK_SIZE (1024*1024*4)
 
+
+sds gccMakeHttpReplyFromFile(char* fn);
+
+
 /* Initialize the background system, spawning the thread. */
 void bioInit(void) {
     pthread_attr_t attr;
@@ -96,7 +100,7 @@ void *bioProcessBackgroundJobs(void *arg) {
         pthread_mutex_unlock(&bio_mutex[tid]);
 
         /* TODO: Process the job accordingly to its type. */
-        job->result = makeHttpReplyFromFile(job->name+1);
+        job->result = gccMakeHttpReplyFromFile(job->name+1);
         // free(job);
         safeQueuePush(bio_job_results[tid],job);
         /* Lock again before reiterating the loop, if there are no longer
@@ -165,29 +169,70 @@ sds makeHttpReplyFromFile(char* fn)
     size_t before = sdslen(content);
     char* ptr = content + sdslen(content);
 
-    size_t remain = size;
+    size_t remain = 2;
     ssize_t nread;
     while(remain > 0 && (nread = read(fd, ptr, remain) != 0)) {
         if(nread == -1) {
             printf("ERROR: %s\n",strerror(errno));
-            if(errno == EINTR) { /* if the read syscall is interruptted, the program reissues it */
+            if(errno == EINTR) {
+                /* if the read syscall is interruptted, the program reissues it */
                 continue;
             }
+            /* Otherise, stop reading the file */
             break;
         }
+
+        printf("nread : %ld\n",(unsigned long)nread);
         remain -= nread;
-        /* nread may be smaller than the actual number of read bytes
-         * This make remain unsafe when it is outside of the loop
+        /* 'nread' may be smaller than the actual number of read bytes
+         * This make 'remain' unsafe when it is outside of the loop
          * However, we still use 'remain' to ensure that enough data was read.
          */
         ptr += nread;
     }
     close(fd);
+    printf("==== Content ====  \n%s\n %ld \n",content,sdslen(content));
+
     if(sdslen(content)-before < size) {
         sdsfree(content);
         return NULL;
     }
     sdsaddlen(content,size);
-    /* printf("==== Content ====  \n%s\n",content); */
+    return content;
+}
+
+sds gccMakeHttpReplyFromFile(char* fn)
+{
+    FILE* fp;
+    fp = fopen (fn, "r");
+    if (!fp) {
+        perror ("fopen");
+        return NULL;
+    }
+    /* if(size>1024*1024) return NULL; */
+    struct stat fs;
+
+    if(fstat(fileno(fp),&fs) != 0)
+    {
+        perror ("fstat");
+        return NULL;
+    }
+    sds content = sdsempty();
+    size_t size = fs.st_size;
+    content = sdscatprintf(content,"HTTP/1.1 200 OK\r\nContent-Length: %ld\r\n\r\n",size);
+    content = sdsMakeRoomFor(content,size);
+    size_t before = sdslen(content);
+    char* ptr = content + before;
+    if (!fread (ptr, size, 1, fp)) {
+        perror ("fread");
+        sdsfree(content);
+        return NULL;
+    }
+    if (fclose (fp)) {
+        perror ("fclose");
+    }
+
+    sdsaddlen(content,size);
+    //printf("==== Content ====  \n%s\n Content Length: %ld \n",content,sdslen(content));
     return content;
 }

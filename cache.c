@@ -135,22 +135,26 @@ void _masterProcessFinishedIO() {
     sds content = NULL;
     /* For each IO worker */
     int tid = 0;
+    /* Polling all io thread */
     for(tid=0;tid<CCACHE_NUM_IO_THREADS;tid++) {
         while(bioGetResult(tid,&key,&content))
         {
             objSds *value = dictFetchValue(master_cache,key);
             if(content == NULL) value->ptr = HTTP_NOT_FOUND->ptr;
             else value->ptr = content;
+
             value->state = OBJSDS_OK;
             listIter li;
             listNode *ln;
             cacheEntry *ce;
+            /* notify all cache entries waiting for this key */
             listRewind(value->waiting_entries,&li);
             /* for each waiting ce */
             while ((ln = listNext(&li)) != NULL){
                 /* unwatch client */
                 ce = listNodeValue(ln);
                 ce->val = value->ptr;
+                /* notify all clients waiting for this entry */
                 _masterUnwatchClient(ce->waiting_clients, ce->val);
             }
         }
