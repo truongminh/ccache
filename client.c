@@ -4,9 +4,9 @@
 #include "anet.h"   /* Networking the easy way */
 #include "pthread.h"
 #include "request_handler.h"
+#include "util.h"
 
 static int _installWriteEvent(aeEventLoop *el, httpClient *c);
-static int _installReadEvent(aeEventLoop *el, httpClient *c);
 static void blockClient(aeEventLoop *el, httpClient *c);
 /* -----------------------------------------------------------------------------
  * Low level functions to accept connection and create new clients
@@ -29,10 +29,10 @@ void acceptTcpHandler(aeEventLoop *el, int fd, void *privdata, int mask) {
     char neterr[ANET_ERR_LEN];
     cfd = anetTcpAccept(neterr, fd, cip, &cport);
     if (cfd == AE_ERR) {
-        rLog(CCACHE_WARNING,"Accepting client connection: %s", neterr);
+        ulog(CCACHE_WARNING,"Accepting client connection: %s", neterr);
         return;
     }
-    rLog(CCACHE_VERBOSE,"Accepted %s:%d", cip, cport);
+    ulog(CCACHE_DEBUG,"Accepted %s:%d", cip, cport);
     /* Create a new client and add it to server.clients list */
     /* NOTICE: must be called via function */
     httpClient *c;
@@ -42,7 +42,7 @@ void acceptTcpHandler(aeEventLoop *el, int fd, void *privdata, int mask) {
      */
     aeEventLoop *nextEL = nextClient(el);    
     if ((c = createClient(nextEL,cfd,cip,cport)) == NULL) {
-        rLog(CCACHE_WARNING,"Error allocating resoures for the client");
+        ulog(CCACHE_WARNING,"Error allocating resoures for the client");
         freeClient(nextEL,c); /* May be already closed, just ingore errors */
         return;
     }
@@ -68,6 +68,7 @@ httpClient *createClient(aeEventLoop *el, int fd, const char* ip, int port) {
     anetTcpNoDelay(NULL,fd);
     c->fd = fd;
     c->rep = replyCreate();
+    c->bufpos = 0;
     c->req = requestCreate();
     c->lastinteraction = time(NULL);
     c->ip = strdup(ip);
@@ -95,12 +96,12 @@ void readQueryFromClient(aeEventLoop *el, int fd, void *privdata, int mask) {
         if (errno == EAGAIN) { /* try again */
             nread = 0;
         } else {
-            rLog(CCACHE_VERBOSE, "Reading from client: %s",strerror(errno));
+            ulog(CCACHE_VERBOSE, "Reading from client: %s",strerror(errno));
             freeClient(el,c);
             return;
         }
     } else if (nread == 0) {
-        rLog(CCACHE_VERBOSE, "Client closed connection");
+        ulog(CCACHE_VERBOSE, "Client closed connection");
         freeClient(el,c);
         return;
     }
@@ -144,14 +145,15 @@ void sendReplyToClient(aeEventLoop *el, int fd, void *privdata, int mask) {
     CCACHE_NOTUSED(mask);
     // if (totwritten > REDIS_MAX_WRITE_PER_EVENT)
     sds obuf = replyToBuffer(c->rep);
+    int towrite = sdslen(obuf) - c->bufpos;
     if(obuf) {
-        nwritten = write(fd, obuf,sdslen(obuf));
+        nwritten = write(fd, obuf+c->bufpos,towrite);
         /* Content */
         if (nwritten == -1) {
             if (errno == EAGAIN) {
                 nwritten = 0;
             } else {
-                rLog(CCACHE_VERBOSE,
+                ulog(CCACHE_VERBOSE,
                      "Error writing to client: %s", strerror(errno));
                 freeClient(el,c);
                 return;
@@ -159,8 +161,13 @@ void sendReplyToClient(aeEventLoop *el, int fd, void *privdata, int mask) {
         }
         c->lastinteraction = time(NULL);
         listMoveNodeToTail(el->clients,c->node);
-        resetClient(c);
-        aeDeleteFileEvent(el,c->fd,AE_WRITABLE);
+        if(nwritten<towrite) {
+            c->bufpos += nwritten;
+        }
+        else {
+            resetClient(c);
+            aeDeleteFileEvent(el,c->fd,AE_WRITABLE);
+        }
     }
 }
 
@@ -180,6 +187,7 @@ void freeClient(aeEventLoop *el, httpClient *c) {
 
 /* resetClient prepare the client to process the next command */
 void resetClient(httpClient *c) {
+    c->bufpos = 0;
     replyReset(c->rep);
     requestReset(c->req);
 }
@@ -200,7 +208,7 @@ int closeTimedoutClients(aeEventLoop *el) {
             if (el->maxidletime &&
                     (now - c->lastinteraction > el->maxidletime))
             {
-                rLog(CCACHE_VERBOSE,"Closing idle client");
+                ulog(CCACHE_VERBOSE,"Closing idle client");
                 /* if (c->isblocked) DONT FREE CLIENT */
                 freeClient(el,c);
                 deletedNodes++;
@@ -238,12 +246,3 @@ int _installWriteEvent(aeEventLoop *el, httpClient *c) {
     return CCACHE_OK;
 }
 
-
-/* Set the event loop to listen for write events on the client's socket.
- * Typically gets called every time a reply is built. */
-int _installReadEvent(aeEventLoop *el, httpClient *c) {
-    if (c->fd <= 0) return CCACHE_ERR;
-    if (aeCreateFileEvent(el, c->fd, AE_READABLE,readQueryFromClient, c) == AE_ERR)
-        return CCACHE_ERR;
-    return CCACHE_OK;
-}
