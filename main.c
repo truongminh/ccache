@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <pthread.h>
 #include <stdlib.h>
+#include "ccache_config.h"
 #include "ae.h"
 #include "anet.h"
 #include "client.h"
@@ -9,7 +10,6 @@
 #include "request_handler.h"
 
 
-#define NUM_THREADS    4
 
 struct aeEventLoop server; /* server global state */
 
@@ -58,11 +58,11 @@ int main(void)
      requestHandleInitializeGlobalCache();
      cacheMasterInit();
      aeEventLoop *el = aeCreateEventLoop();
-     initMaster(el,NUM_THREADS);
-     pthread_t threads[NUM_THREADS];
+     initMaster(el,CCACHE_NUM_WORKER_THREADS);
+     pthread_t threads[CCACHE_NUM_WORKER_THREADS];
      int rc;
      long t;
-     for(t=0; t<NUM_THREADS; t++){
+     for(t=0; t<CCACHE_NUM_WORKER_THREADS; t++){
        aeEventLoop *slave = aeCreateEventLoop();
        slave->myid = t+1;
        aeCreateTimeEvent(slave, 2000, serverCron, NULL, NULL);

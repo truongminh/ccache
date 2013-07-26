@@ -45,4 +45,12 @@ void cacheMasterInit();
 ccache *cacheAddSlave(void *el);
 void cacheAddWatchClient(cacheEntry *ce, httpClient *client);
 
+
+#if(CCACHE_LOG_LEVEL == CCACHE_DEBUG)
+    #define REPORT_MASTER_ADD_KEY(key) printf("Master \t Add new entry [%s]\n",key)
+#else
+    #define REPORT_MASTER_ADD_KEY(key) ; /* just ignore */
+#endif
+
+
 #endif // CCACHE_H

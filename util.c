@@ -8,10 +8,18 @@
 #include <stdarg.h>
 #include <time.h>
 #include <unistd.h>
-
+#include "ccache_config.h"
 #include "util.h"
 
-/* Glob-style pattern matching. */
+int stringstartwith(const char *s1, const char *s2){
+    while (*s2 && (*s1++ == *s2++)) {
+            ;
+        }
+    return *s2 == '\0';
+}
+
+/* Glob-style
+ *pattern matching. */
 int stringmatchlen(const char *pattern, int patternLen,
         const char *string, int stringLen, int nocase)
 {
@@ -460,16 +468,21 @@ int main(int argc, char **argv) {
 }
 #endif
 
-void rLog(int level, const char *fmt, ...) {
+void ulog(int level, const char *fmt, ...) {
     const char *c = ".-*#";
     time_t now = time(NULL);
     va_list ap;
     FILE *fp;
     char buf[64];
     char msg[1024];
-    //if (level < 3) return;
+    if (level < CCACHE_LOG_LEVEL) return;
+
+#if (CCACHE_LOG_LEVEL == CCACHE_DEBUG)
     fp = stdout;
+#else
+    fp = fopen(CCACHE_LOG_FILE,"a+");
     if (!fp) return;
+#endif
 
     va_start(ap, fmt);
     vsnprintf(msg, sizeof(msg), fmt, ap);

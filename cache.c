@@ -10,17 +10,11 @@
 #include "string.h" /* for memcpy */
 #include "dicttype.h"
 #include "objSds.h"
-#include "ufile.h"
+#include "bio.h"
 
 /*
 * long page_size = sysconf (_SC_PAGESIZE);
 */
-
-#ifdef CCACHE_DEBUG
-    #define REPORT_MASTER_ADD_KEY(key) printf("Master \t Add new entry [%s]\n",key)
-#else
-    #define REPORT_MASTER_ADD_KEY(key) ; /* just ignore */
-#endif
 
 static pthread_t master_thread;
 static dict *master_cache;
@@ -34,7 +28,7 @@ void _masterProcessFinishedIO();
 
 void cacheMasterInit() {
     pthread_attr_t attr;
-    HTTP_NOT_FOUND = objSdsFromSds(sdsnew("HTTP/1.1 200 OK\r\nContent-Length: 9\r\n\r\nNot Found"));
+    HTTP_NOT_FOUND = objSdsFromSds(sdsnew("HTTP/1.1 404 OK\r\nContent-Length: 9\r\n\r\nNot Found"));
     objSdsAddRef(HTTP_NOT_FOUND);
     /* Initialize mutex and condition variable objects */    
     /* For portability, explicitly create threads in a joinable state */
@@ -104,7 +98,7 @@ void _masterProcessCacheNew(ccache *c){
             objSdsAddRef(value);
             dictAdd(master_cache,mkey,value);
             /* New IO Job */
-            bioCreateBackgroundJob(0,mkey);
+            bioPushStaticFileJob(mkey);
             OBJ_REPORT_REF(value);
         }
         else {
@@ -136,7 +130,7 @@ void _masterProcessFinishedIO() {
     /* For each IO worker */
     int tid = 0;
     /* Polling all io thread */
-    for(tid=0;tid<CCACHE_NUM_IO_THREADS;tid++) {
+    for(tid=0;tid<CCACHE_NUM_BIO_THREADS;tid++) {
         while(bioGetResult(tid,&key,&content))
         {
             objSds *value = dictFetchValue(master_cache,key);

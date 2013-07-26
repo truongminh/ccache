@@ -119,6 +119,7 @@ void *bioProcessBackgroundJobs(void *arg) {
             // free(job);
             if(job->result == NULL) {
                 /* Check if this job is a special one such as zoom */
+                /* TODO: Should an internal job queue be used? */
                 if(stringstartwith(job->name+1,IMG_ZOOM_STRING)) { // start with 'zoom'
                     bioCreateBackgroundJob(tid,job->name,BIO_RESIZE_IMAGE);
                     free(job); /* the current job was replaced by a resize-image job  */

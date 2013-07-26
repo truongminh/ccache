@@ -2,6 +2,7 @@
 #define OBJSDS_H
 #include <malloc.h>
 #include <assert.h>
+#include "ccache_config.h"
 #include "sds.h"
 #include "adlist.h"
 
@@ -22,7 +23,7 @@ objSds *objSdsFromSds(sds ptr);
 void objSdsAddRef(objSds *obj);
 void objSdsSubRef(objSds *obj);
 
-#ifdef CCACHE_DEBUG
+#if(CCACHE_LOG_LEVEL == CCACHE_DEBUG)
     #define OBJ_REPORT_REF(obj) printf("OBJECT %p REF %d \n",obj,obj->ref)
 #else
     #define OBJ_REPORT_REF(obj) ;

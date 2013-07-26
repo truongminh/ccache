@@ -18,7 +18,9 @@ SOURCES += \
     request_handler.c \
     objSds.c \
     safe_queue.c \
-    ufile.c
+    ufile.c \
+    img.c \
+    bio.c
 
 HEADERS += \
     dict.h \
@@ -39,7 +41,18 @@ HEADERS += \
     request_handler.h \
     objSds.h \
     safe_queue.h \
-    ufile.h
+    ufile.h \
+    img.h \
+    bio.h \
+    ccache_config.h
+
+
+INCLUDEPATH += /usr/local/include/opencv
+
+LIBS += -L/usr/local/lib/ -lopencv_core -lopencv_highgui
+# DEBUG
+LIBS += -L/usr/local/lib/ -lopencv_legacy
+
 
 
 
