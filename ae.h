@@ -111,10 +111,10 @@ typedef struct aeEventLoop {
     int nextSlaveID;
     int numslave;
     unsigned long loop;
-#ifdef AE_MAX_CLIENT
+#ifdef AE_MAX_PENDING_CLIENT
     unsigned long maxclients;
 #endif
-#ifdef AE_MAX_IDLE_TIME
+#ifdef AE_MAX_CLIENT_IDLE_TIME
     unsigned int maxidletime;
 #endif
 } aeEventLoop;

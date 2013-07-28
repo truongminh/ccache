@@ -13,7 +13,6 @@
 #include "util.h"
 #include "reply.h"
 #include "request.h"
-#include "object.h"
 
 /* TODO: use loop as time point insteaed of time(NULL) */
 
@@ -47,7 +46,7 @@ typedef struct {
  *----------------------------------------------------------------------------*/
 
 httpClient *createClient(aeEventLoop *el, int fd, const char *ip, int port);
-#ifdef AE_MAX_IDLE_TIME
+#ifdef AE_MAX_CLIENT_IDLE_TIME
 int closeTimedoutClients(aeEventLoop *el);
 #endif
 

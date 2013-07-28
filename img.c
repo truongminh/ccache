@@ -1,3 +1,33 @@
+/* img.c - Resize image
+ *
+ * Copyright (c) 2013, Nguyen Truong Minh <nguyentrminh at gmail dot com>
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
+ *
+ *   * Redistributions of source code must retain the above copyright notice,
+ *     this list of conditions and the following disclaimer.
+ *   * Redistributions in binary form must reproduce the above copyright
+ *     notice, this list of conditions and the following disclaimer in the
+ *     documentation and/or other materials provided with the distribution.
+ *   * Neither the name of CCACHE nor the names of its contributors may be used
+ *     to endorse or promote products derived from this software without
+ *     specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
+ * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ */
+
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <errno.h>
@@ -19,7 +49,7 @@ int imgAuto(sds url)
     width = atoi(tokens[2]);
     height = atoi(tokens[3]);
     char *fn = tokens[4];
-    if(width<1 || width>1000 || height<1 || height>1000||fn[0]=='.') {
+    if(width<1 || width>IMG_MAX_WIDTH || height<1 || height>IMG_MAX_HEIGHT||fn[0]=='.') {
         ulog(CCACHE_VERBOSE,"Not conform %d %d %s",width,height,fn);
         return IMG_ERR;
     }
@@ -84,10 +114,12 @@ int resize( sds fn,  unsigned int width, unsigned int height)
       goto clean;
   }
   dstpath = sdscatprintf(dstpath,"/%s",fn);
-  printf("%d",cvSaveImage (dstpath, dst, 0));
-  cvReleaseImage(&src);
-  err = IMG_OK;
-  // clean up and release resources
+  if(cvSaveImage (dstpath, dst, 0)) {
+      cvReleaseImage(&src);
+      err = IMG_OK;
+  }
+
+  /* clean up and release resources */
 clean:
     sdsfree(srcpath);
     sdsfree(fn);

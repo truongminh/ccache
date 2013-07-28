@@ -5,11 +5,9 @@ SOURCES += \
     ae_epoll.c \
     ae.c \
     adlist.c \
-    zmalloc.c \
     anet.c \
     util.c \
     sds.c \
-    object.c \
     reply.c \
     dicttype.c \
     client.c \
@@ -20,22 +18,20 @@ SOURCES += \
     safe_queue.c \
     ufile.c \
     img.c \
-    bio.c
+    bio.c \
+    mcache.c
 
 HEADERS += \
     dict.h \
     ae.h \
     adlist.h \
-    zmalloc.h \
     anet.h \
     util.h \
     sds.h \
     reply.h \
     dicttype.h \
-    object.h \
     client.h \
     signal_handler.h \
-    server.h \
     request.h \
     cache.h \
     request_handler.h \
@@ -44,7 +40,8 @@ HEADERS += \
     ufile.h \
     img.h \
     bio.h \
-    ccache_config.h
+    ccache_config.h \
+    mcache.h
 
 
 INCLUDEPATH += /usr/local/include/opencv

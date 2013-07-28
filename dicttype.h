@@ -1,3 +1,4 @@
+
 #ifndef DICTTYPE_H
 #define DICTTYPE_H
 
@@ -11,5 +12,7 @@ unsigned int dictSdsHash(const void *key);
 dictType sdsDictType;
 dictType keylistDictType;
 dictType objSdsDictType;
+dictType sdsDoubleDictType;
+
 
 #endif // DICTTYPE_H

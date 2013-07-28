@@ -1,5 +1,5 @@
-#include "client.h"
 #include <sys/uio.h>
+#include "client.h"
 #include "malloc.h"
 #include "anet.h"   /* Networking the easy way */
 #include "pthread.h"
@@ -46,7 +46,7 @@ void acceptTcpHandler(aeEventLoop *el, int fd, void *privdata, int mask) {
         freeClient(nextEL,c); /* May be already closed, just ingore errors */
         return;
     }
-#ifdef AE_MAX_CLIENT
+#ifdef AE_MAX_PENDING_CLIENT
     /* Check for max client */
     if (nextEL->maxclients && listLength(nextEL->clients) > nextEL->maxclients) {
         char *err = "-ERR max number of clients reached\r\n";
@@ -165,7 +165,11 @@ void sendReplyToClient(aeEventLoop *el, int fd, void *privdata, int mask) {
             c->bufpos += nwritten;
         }
         else {
+#ifdef AE_MAX_CLIENT_IDLE_TIME
             resetClient(c);
+#else
+            freeClient(el,c);
+#endif
             aeDeleteFileEvent(el,c->fd,AE_WRITABLE);
         }
     }
@@ -193,7 +197,7 @@ void resetClient(httpClient *c) {
 }
 
 
-#ifdef AE_MAX_IDLE_TIME
+#ifdef AE_MAX_CLIENT_IDLE_TIME
 int closeTimedoutClients(aeEventLoop *el) {    
     if(el->myid != 0) {
         httpClient *c;
@@ -208,8 +212,8 @@ int closeTimedoutClients(aeEventLoop *el) {
             if (el->maxidletime &&
                     (now - c->lastinteraction > el->maxidletime))
             {
-                ulog(CCACHE_VERBOSE,"Closing idle client");
-                /* if (c->isblocked) DONT FREE CLIENT */
+                ulog(CCACHE_DEBUG,"Closing idle client");
+                /* TODO: if (c->isblocked) DONT FREE CLIENT */
                 freeClient(el,c);
                 deletedNodes++;
             }

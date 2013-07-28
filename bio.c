@@ -1,3 +1,4 @@
+
 #include <pthread.h>
 #include <stdlib.h>
 #include <string.h> /* strerror */
@@ -96,39 +97,41 @@ void *bioProcessBackgroundJobs(void *arg) {
         /* Pop the job from the queue. */
         ln = listFirst(bio_jobs[tid]);
         job = ln->value;
+        if(stringstartwith(job->name+1,IMG_ZOOM_STRING)) { // start with 'zoom'
+            job->type |= BIO_ZOOM_IMAGE;
+        }
+        printf("Bio job for %s\n",job->name);
         /* It is now possible to unlock the background system as we know have
          * a stand alone job structure to process.*/
         pthread_mutex_unlock(&bio_mutex[tid]);
-        if(job->type == BIO_RESIZE_IMAGE) {
+        again:
+        if(job->type&BIO_RESIZE_IMAGE) {
             /* OK */
             if(imgAuto(job->name) == IMG_OK){
-                // We assign the reading file back for later process time
-                bioCreateBackgroundJob(tid,job->name,BIO_STATIC_FILE);
-                free(job); /* the current job was replaced by a static file job  */
+                /* Allow reading static file */
+                job->type |= BIO_STATIC_FILE;
             }
             else {
                 /* Some errors occur, or the src image does not exist */
                 job->result = NULL;
                 // free(job); Don't free the job returned to master
-                safeQueuePush(bio_job_results[tid],job);
             }
         }
-        else {
+        if(job->type&BIO_STATIC_FILE) {
             /* This is static file job */
             job->result = gccMakeHttpReplyFromFile(job->name+1);
             // free(job);
-            if(job->result == NULL) {
-                /* Check if this job is a special one such as zoom */
-                /* TODO: Should an internal job queue be used? */
-                if(stringstartwith(job->name+1,IMG_ZOOM_STRING)) { // start with 'zoom'
-                    bioCreateBackgroundJob(tid,job->name,BIO_RESIZE_IMAGE);
-                    free(job); /* the current job was replaced by a resize-image job  */
-                }
-            }
-            else {
-                safeQueuePush(bio_job_results[tid],job);
+            /* Check if this job is a special one such as zoom */
+            /* Of type BIO_ZOOM, not found, not resize yet */
+            if((job->type&BIO_ZOOM_IMAGE)
+                    &&(job->result==NULL) // not found
+                    && (job->type^BIO_RESIZE_IMAGE)) { // has not call resize
+                    job->type |= BIO_RESIZE_IMAGE;
+                    goto again;
             }
         }
+        job->type |= BIO_SUCCESS;
+        safeQueuePush(bio_job_results[tid],job);
         /* Lock again before reiterating the loop, if there are no longer
          * jobs to process we'll block again in pthread_cond_wait(). */
         pthread_mutex_lock(&bio_mutex[tid]);
@@ -148,12 +151,13 @@ unsigned int bioPendingJobsOfThread(int tid) {
 
 int bioGetResult(int tid, sds *name, sds *result) {
     struct bio_job *job = safeQueuePop(bio_job_results[tid]);
+    int res = 0;
     if(job)
     {
         *name = job->name;
-        *result = job->result;
+        *result = job->result;        
+        res = job->type;
         free(job);
-        return 1;
     }
-    return 0;
+    return res;
 }

@@ -69,11 +69,11 @@ aeEventLoop *aeCreateEventLoop(void) {
         eventLoop->events[i].mask = AE_NONE;
     eventLoop->clients = listCreate();
     eventLoop->bclients = dictCreate(&keylistDictType,NULL);
-#ifdef AE_MAX_CLIENT
-    eventLoop->maxclients = AE_MAX_CLIENT;
+#ifdef AE_MAX_PENDING_CLIENT
+    eventLoop->maxclients = AE_MAX_PENDING_CLIENT;
 #endif
-#ifdef AE_MAX_IDLE_TIME
-    eventLoop->maxidletime = AE_MAX_IDLE_TIME;
+#ifdef AE_MAX_CLIENT_IDLE_TIME
+    eventLoop->maxidletime = AE_MAX_CLIENT_IDLE_TIME;
 #endif
     return eventLoop;
 }
