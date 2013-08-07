@@ -34,8 +34,57 @@
 #include <errno.h>
 #include <string.h>
 #include <stdio.h>
-
+#include <stdlib.h>
 #include "ufile.h"
+#include "util.h"
+
+static sds srcDir;
+static sds tmpDir;
+
+static inline sds ufilePathTrailingSlash(char *fn) {
+    sds path = sdsnew(fn);
+    if(path&&path[sdslen(path)-1] != '/') {
+            path = sdscat(path,"/");
+    }
+    return path;
+}
+
+sds ufilePathInSrcDir(sds fn) {
+    sds path = sdsdup(srcDir);
+    path = sdscatsds(path,fn);
+    return path;
+}
+
+sds ufilePathInTmpDirCharPtr(char *str) {
+    sds path = sdsdup(tmpDir);
+    path = sdscat(path,str);
+    return path;
+}
+
+sds ufilePathInTmpDir(sds fn) {
+    sds path = sdsdup(tmpDir);
+    path = sdscatsds(path,fn);
+    return path;
+}
+
+
+
+void ufileSetDirs(char *sdn, char *tdn)
+{
+    srcDir = ufilePathTrailingSlash(sdn);
+    tmpDir = ufilePathTrailingSlash(tdn);
+    if(notsafePath(srcDir)){
+        printf("SAFE DIR MUST NOT HAVE 2 CONSECUTIVE '.' :  %s\n",srcDir);
+        exit(EXIT_FAILURE);
+    }
+    if(notsafePath(tmpDir)){
+        printf("SAFE DIR MUST NOT HAVE 2 CONSECUTIVE '.' :  %s\n",tmpDir);
+        exit(EXIT_FAILURE);
+    }
+    if(utilMkdir(tmpDir)) exit(EXIT_FAILURE);
+    ulog(CCACHE_WARNING, "Src Dir: %s\n",srcDir);
+    ulog(CCACHE_WARNING, "Tmp Dir: %s\n",tmpDir);
+}
 
 sds getFileContent(char* fn)
 {
@@ -56,63 +105,12 @@ sds getFileContent(char* fn)
     return content;
 }
 
-sds makeHttpReplyFromFile(char* fn)
-{
-    int fd;
-    struct stat fs;
-    if((fd=open(fn,O_RDONLY)) < 0) return NULL;
-    if (fstat(fd, &fs)) {
-        perror ("stat");
-        return NULL;
-    }
-    size_t size = fs.st_size;
-
-    /* if(size>1024*1024) return NULL; */
-    sds content = sdsempty();        
-    content = sdscatprintf(content,"HTTP/1.1 200 OK\r\nContent-Length: %ld\r\n\r\n",size);
-    content = sdsMakeRoomFor(content,size);
-    size_t before = sdslen(content);
-    char* ptr = content + sdslen(content);
-
-    size_t remain = 2;
-    ssize_t nread;
-    while(remain > 0 && (nread = read(fd, ptr, remain) != 0)) {
-        if(nread == -1) {
-            printf("ERROR: %s\n",strerror(errno));
-            if(errno == EINTR) {
-                /* if the read syscall is interruptted, the program reissues it */
-                continue;
-            }
-            /* Otherise, stop reading the file */
-            break;
-        }
-
-        printf("nread : %ld\n",(unsigned long)nread);
-        remain -= nread;
-        /* 'nread' may be smaller than the actual number of read bytes
-         * This make 'remain' unsafe when it is outside of the loop
-         * However, we still use 'remain' to ensure that enough data was read.
-         */
-        ptr += nread;
-    }
-    close(fd);
-    printf("==== Content ====  \n%s\n %ld \n",content,sdslen(content));
-
-    if(sdslen(content)-before < size) {
-        sdsfree(content);
-        return NULL;
-    }
-    sdsaddlen(content,size);
-    return content;
-}
-
-
-sds gccMakeHttpReplyFromFile(char* fn)
+sds ufileMakeHttpReplyFromFile(sds filepath)
 {
     FILE* fp;
-    fp = fopen (fn, "r");
+    fp = fopen (filepath, "r");
     if (!fp) {
-        ulog(CCACHE_VERBOSE,"ufile fopen[%s] %s ",fn,strerror(errno));
+        ulog(CCACHE_VERBOSE,"ufile fopen[%s] %s ",filepath,strerror(errno));
         return NULL;
     }
     /* if(size>1024*1024) return NULL; */
@@ -120,7 +118,7 @@ sds gccMakeHttpReplyFromFile(char* fn)
 
     if(fstat(fileno(fp),&fs) != 0)
     {
-        ulog(CCACHE_WARNING,"ufile fstat[%s] %s",fn,strerror(errno));
+        ulog(CCACHE_WARNING,"ufile fstat[%s] %s",filepath,strerror(errno));
         return NULL;
     }
     sds content = sdsempty();
@@ -130,12 +128,12 @@ sds gccMakeHttpReplyFromFile(char* fn)
     size_t before = sdslen(content);
     char* ptr = content + before;
     if (!fread (ptr, size, 1, fp)) {
-        ulog(CCACHE_WARNING,"ufile fread[%s] %s",fn,strerror(errno));
+        ulog(CCACHE_WARNING,"ufile fread[%s] %s",filepath,strerror(errno));
         sdsfree(content);
         return NULL;
     }
     if (fclose (fp)) {
-        ulog(CCACHE_WARNING,"ufile fclose[%s] %s",fn,strerror(errno));
+        ulog(CCACHE_WARNING,"ufile fclose[%s] %s",filepath,strerror(errno));
     }
 
     sdsaddlen(content,size);
@@ -143,3 +141,10 @@ sds gccMakeHttpReplyFromFile(char* fn)
     return content;
 }
 
+sds ufilMakettpReplyFromBuffer(uchar *buf, size_t len)
+{
+    sds content = sdsempty();
+    content = sdscatprintf(content,"HTTP/1.1 200 OK\r\nContent-Length: %ld\r\n\r\n",len);
+    content = sdscatlen(content,buf,len);
+    return content;
+}
