@@ -35,8 +35,8 @@
 
 /* Caching Options */
 #define MASTER_STATUS_REFRESH_PERIOD 5 /* 10 seconds */
-#define MASTER_MAX_AVAIL_MEM (500L<<10) /* 100MB */
-#define MASTER_MAX_AVAIL_DISK (500L<<10) /* 100MB */
+#define MASTER_MAX_AVAIL_MEM (10L<<20) /* 100MB */
+#define MASTER_MAX_AVAIL_DISK (100L<<20) /* 100MB */
 
 #define ONE_MEGABYTE (1<<20)
 #define BYTES_TO_MEGABYTES(d) ((double)d/ONE_MEGABYTE)
@@ -46,10 +46,8 @@
 /* Threads doing background jobs ordered by the master cache */
 #define CCACHE_NUM_BIO_THREADS 4
 
-
 /* Image Directories and Options */
 #define IMG_CROP_AVAILABLE 1
-#define IMG_SRC_STRING "src"
 #define IMG_ZOOM_STRING "zoom"
 #define IMG_MAX_WIDTH 1000
 #define IMG_MAX_HEIGHT 1000

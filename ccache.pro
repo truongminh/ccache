@@ -1,3 +1,7 @@
+TEMPLATE = app
+CONFIG += console
+CONFIG -= app_bundle
+CONFIG -= qt
 
 SOURCES += \
     main.c \
@@ -46,7 +50,9 @@ HEADERS += \
 
 INCLUDEPATH += /usr/local/include/opencv
 
-LIBS += -L/usr/local/lib/ -lopencv_core -lopencv_highgui
+LIBS += -L/usr/local/lib/ -lopencv_core -lopencv_highgui -lopencv_imgproc
+LIBS += -L/usr/lib/ -lpthread
+
 # DEBUG
 LIBS += -L/usr/local/lib/ -lopencv_legacy
 
