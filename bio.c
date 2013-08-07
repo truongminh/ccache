@@ -2,6 +2,7 @@
 #include <pthread.h>
 #include <stdlib.h>
 #include <string.h> /* strerror */
+#include <errno.h>
 #include "ufile.h"
 #include "adlist.h"
 #include "safe_queue.h"
@@ -60,8 +61,13 @@ void bioInit(void) {
 }
 
 static int ctid = 0;
-void bioPushStaticFileJob(sds name) {
-    bioCreateBackgroundJob(ctid,name,BIO_STATIC_FILE);
+void bioPushGeneralJob(sds name) {
+    bioCreateBackgroundJob(ctid,name,BIO_GENERAL);
+    ctid++;
+    if(ctid == CCACHE_NUM_BIO_THREADS) ctid = 0;
+}
+void bioPushRemoveFileJob(sds name) {
+    bioCreateBackgroundJob(ctid,name,BIO_REMOVE_FILE);
     ctid++;
     if(ctid == CCACHE_NUM_BIO_THREADS) ctid = 0;
 }
@@ -97,44 +103,67 @@ void *bioProcessBackgroundJobs(void *arg) {
         /* Pop the job from the queue. */
         ln = listFirst(bio_jobs[tid]);
         job = ln->value;
-        if(stringstartwith(job->name+1,IMG_ZOOM_STRING)) { // start with 'zoom'
-            job->type |= BIO_ZOOM_IMAGE;
-        }
-        printf("Bio job for %s\n",job->name);
         /* It is now possible to unlock the background system as we know have
          * a stand alone job structure to process.*/
         pthread_mutex_unlock(&bio_mutex[tid]);
-        again:
-        if(job->type&BIO_RESIZE_IMAGE) {
-            /* OK */
-            if(imgAuto(job->name) == IMG_OK){
-                /* Allow reading static file */
-                job->type |= BIO_STATIC_FILE;
-            }
-            else {
-                /* Some errors occur, or the src image does not exist */
-                job->result = NULL;
-                // free(job); Don't free the job returned to master
-            }
+
+        /* NOTICE: path must be safe before used */
+        if(notsafePath(job->name)) {
+            job->result = NULL;
+            safeQueuePush(bio_job_results[tid],job); /* the current job will be freed by master */
+            goto finish;
         }
-        if(job->type&BIO_STATIC_FILE) {
+
+        /* Search for static file */
+        if(job->type&BIO_READ_FILE) {
             /* This is static file job */
-            job->result = gccMakeHttpReplyFromFile(job->name+1);
+            sds path = ufilePathInSrcDir(job->name);
+            job->result = ufileMakeHttpReplyFromFile(path);
+            sdsfree(path);
             // free(job);
             /* Check if this job is a special one such as zoom */
             /* Of type BIO_ZOOM, not found, not resize yet */
-            if((job->type&BIO_ZOOM_IMAGE)
-                    &&(job->result==NULL) // not found
-                    && (job->type^BIO_RESIZE_IMAGE)) { // has not call resize
-                    job->type |= BIO_RESIZE_IMAGE;
-                    goto again;
+            if(job->result == NULL &&
+                    stringstartwith(job->name+1,IMG_ZOOM_STRING)) { // start with 'zoom'
+                job->type |= BIO_ZOOM_IMAGE;
+            }
+            else {
+                safeQueuePush(bio_job_results[tid],job); /* the current job will be freed by master */
+                goto finish;
             }
         }
-        job->type |= BIO_SUCCESS;
-        safeQueuePush(bio_job_results[tid],job);
+        if(job->type&BIO_ZOOM_IMAGE) {
+            /* Search tmp folder */
+            sds path = ufilePathInTmpDir(job->name);
+            job->result = ufileMakeHttpReplyFromFile(path);
+            sdsfree(path);
+            /* Resize an existing image if possible */
+            if(job->result) {
+                safeQueuePush(bio_job_results[tid],job); /* the current job will be freed by master */
+            }
+            else {
+                imgAuto(bio_job_results[tid],job);
+            }
+            goto finish;
+        }
+        if(job->type&BIO_REMOVE_FILE) {
+            // remove file
+            sds path = ufilePathInTmpDir(job->name);
+            if(remove(path)==0) {
+                ulog(CCACHE_DEBUG,"%s deleted\n",path);
+            }
+            else {
+                 ulog(CCACHE_WARNING," remove [%s] %s",path,strerror(errno));
+            }
+            free(job); /* Ignore job result */
+            goto finish;
+        }
+        /* NOTICE: never push the same job twice */
+        finish:
         /* Lock again before reiterating the loop, if there are no longer
          * jobs to process we'll block again in pthread_cond_wait(). */
         pthread_mutex_lock(&bio_mutex[tid]);
+        /* NOTICE */
         listDelNode(bio_jobs[tid],ln);
         bio_pending[tid]--;
     }

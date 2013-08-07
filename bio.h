@@ -34,10 +34,12 @@
 #include "sds.h"
 #include "ccache_config.h"
 
-#define BIO_ZOOM_IMAGE 8
-#define BIO_RESIZE_IMAGE 4
-#define BIO_STATIC_FILE 2
-#define BIO_SUCCESS 1
+#define BIO_ZOOM_IMAGE 16
+#define BIO_REMOVE_FILE 8
+#define BIO_WRITE_FILE 4
+#define BIO_READ_FILE 2
+#define BIO_GENERAL BIO_READ_FILE
+#define BIO_FINISHED 1
 
 #define CCACHE_THREAD_STACK_SIZE (1024*1024*4)
 
@@ -51,7 +53,9 @@ struct bio_job {
 };
 
 void bioInit(void);
-void bioPushStaticFileJob(sds name); /* reserved for master  */
+void bioPushGeneralJob(sds name); /* reserved for master  */
+void bioPushRemoveFileJob(sds name);
+void bioPushWriteFileJob(sds name);
 void bioCreateBackgroundJob(int tid, sds name, int type) ;
 unsigned int bioPendingJobsOfThread(int tid);
 int bioGetResult(int tid, sds *name, sds *result);
