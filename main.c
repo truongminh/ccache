@@ -27,10 +27,13 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  */
+
 #include <stdio.h>
 #include <pthread.h>
 #include <stdlib.h>
 #include "ccache_config.h"
+#include "img.h"
+#include "ufile.h"
 #include "ae.h"
 #include "anet.h"
 #include "client.h"
@@ -39,9 +42,10 @@
 #include "signal_handler.h"
 #include "request_handler.h"
 
+char *program_name;
 
 struct aeEventLoop server; /* server global state */
-
+void usage (int status);
 
 /* We received a SIGTERM,  shuttingdown here in a safe way, as it is
  * not ok doing so inside the signal handler. */
@@ -83,9 +87,21 @@ void initMaster(aeEventLoop *el, int numslave)
     el->numslave = numslave;
 }
 
-int main(void)
-{    
+int main(int argc, char* argv[])
+{
+     char *search = strchr(argv[0],'/');
+     program_name = (search == NULL)? argv[0]: (search+1);
      setupSignalHandlers();
+     char neterr[ANET_ERR_LEN];
+     int port;
+     if(argc < 4 || ((port = atoi(argv[1])) == 0)) {
+         printf("ERROR: port is invalid %s \n",argv[1]);
+         usage(EXIT_SUCCESS);
+     }
+
+
+     ufileSetDirs(argv[2],argv[3]);
+
      requestHandleInitializeGlobalCache();
      cacheMasterInit();
      aeEventLoop *el = aeCreateEventLoop();
@@ -106,8 +122,7 @@ int main(void)
        }
     }
 
-    char neterr[ANET_ERR_LEN];
-    int port = 8888;
+
     char *bindaddr = "0.0.0.0";
     int ipfd = anetTcpServer(neterr,port,bindaddr);
     if (ipfd == ANET_ERR) {
@@ -125,3 +140,18 @@ int main(void)
     return 0;
 }
 
+
+void usage (int status)
+{
+  if (status != EXIT_SUCCESS)
+    fprintf (stderr, ("Try `%s --help' for more information.\n"),program_name);
+  else
+    {
+      printf (("Usage: %s [PORT]... [SRC_DIR]... [TMP_DIR]\n" \
+              "With no SRC_DIR, the current directory is used as input dir.\n"\
+              "With no TMP_DIR, the /tmp directory is used as tmp dir.\n"\
+              "\n"),program_name);
+    }
+
+  exit (status);
+}
