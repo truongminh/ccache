@@ -32,40 +32,45 @@
 #include <sys/types.h>
 #include <errno.h>
 #include <stdio.h>
-
 #include "img.h"
-#include "sds.h"
+#include "ufile.h"
+#include "util.h"
 
-int imgAuto(sds url)
+static void saveImage(int width, int height, char *fn, uchar *buf, size_t len);
+
+void imgAuto(safeQueue *sq, struct bio_job *job)
 {
+    sds url = job->name;
     int width,height;
     int count;
+    /* url is of the form: /zoom/fn?w=x&h=y */
     sds *tokens = sdssplitlen(url,sdslen(url),"/",1,&count);
     if (count != 5 || strcmp(tokens[1],"zoom") != 0) {
         sdsfreesplitres(tokens,count);
-        return IMG_ERR;
+        return;
     }
 
     width = atoi(tokens[2]);
     height = atoi(tokens[3]);
-    char *fn = tokens[4];
+    sds fn = tokens[4];
     if(width<1 || width>IMG_MAX_WIDTH || height<1 || height>IMG_MAX_HEIGHT||fn[0]=='.') {
         ulog(CCACHE_VERBOSE,"Not conform %d %d %s",width,height,fn);
-        return IMG_ERR;
+        return;
     }
-    sdsfreesplitres(tokens, count-1);
-    return resize(fn,width,height);
+    sdsfreesplitres(tokens, count-1);    
+    resize(fn,width,height, sq, job);
 }
 
-int resize( sds fn,  unsigned int width, unsigned int height)
+void resize(sds fn,  unsigned int width, unsigned int height, safeQueue *sq, struct bio_job *job)
 {
-    int err = IMG_ERR;
+    uchar *buf = NULL;
+    size_t len = 0;
+
     // initializations
-    sds srcpath = sdsnew(IMG_SRC_STRING);
-    sds dstpath = NULL;
-    srcpath = sdscatprintf(srcpath,"/%s",fn);
+    sds srcpath = ufilePathInSrcDir(fn);
     IplImage* src = cvLoadImage(srcpath, CV_LOAD_IMAGE_COLOR);
     IplImage* dst = NULL;
+    CvMat* enImg = NULL;
     // validate that everything initialized properly
     if(!src)
     {
@@ -94,37 +99,48 @@ int resize( sds fn,  unsigned int width, unsigned int height)
 #ifdef IMG_CROP_AVAILABLE
   cvResetImageROI( src );
 #endif
+  int p[3];
+  p[0] = CV_IMWRITE_JPEG_QUALITY;
+  p[1] = 80; /* JPEG QUALITY */
+  p[2] = 0;
+  enImg = cvEncodeImage(".jpg", dst, p );
+  buf = enImg->data.ptr;
+  len = enImg->rows*enImg->cols;
+  job->result = ufilMakettpReplyFromBuffer(buf,len);
+  job->type |= BIO_WRITE_FILE; /* Remind master of new written file  */
+  safeQueuePush(sq,job);
+  saveImage(width, height, fn, buf, len);
 
-  dstpath = sdsnew(IMG_ZOOM_STRING);
-  dstpath = sdscatprintf(dstpath,"/%d",width);
-  /*TODO: use a dict of created dirs to the reduce number of syscalls 'mkdir'*/
-  if(mkdir(dstpath,IMG_ZOOM_DIR_MODE) == 0 || errno == EEXIST) {
-      ;
-  }
-  else {
-      ulog(CCACHE_WARNING,"Error making directory [%s]: %s\n", dstpath, strerror(errno));
-      goto clean;
-  }
-  dstpath = sdscatprintf(dstpath,"/%d",height);
-  if(mkdir(dstpath,IMG_ZOOM_DIR_MODE) == 0 || errno == EEXIST) {
-      /* add to dict */ ;
-  }
-  else {
-      ulog(CCACHE_WARNING,"Error making directory [%s]: %s\n", dstpath, strerror(errno));
-      goto clean;
-  }
-  dstpath = sdscatprintf(dstpath,"/%s",fn);
-  if(cvSaveImage (dstpath, dst, 0)) {
-      cvReleaseImage(&src);
-      err = IMG_OK;
-  }
 
   /* clean up and release resources */
 clean:
     sdsfree(srcpath);
     sdsfree(fn);
-    if(dstpath) sdsfree(dstpath);
+    if(src) cvReleaseImage(&src);
+    if(enImg) cvReleaseMat(&enImg);
     if(dst) cvReleaseImage(&dst);
-    cvReleaseImage(&src);
-    return err;
+}
+
+
+void saveImage(int width, int height, char *fn, uchar *buf, size_t len)
+{
+    /* Save The Image */
+    sds dstpath = ufilePathInTmpDirCharPtr(IMG_ZOOM_STRING);
+    dstpath = sdscatprintf(dstpath,"/%d",width);
+    printf("dstpath %s \n",dstpath);
+    /* TODO: use a dict of created dirs to the reduce number of syscalls 'mkdir' */
+    if(utilMkdir(dstpath)) goto clean;
+    dstpath = sdscatprintf(dstpath,"/%d",height);
+    if(utilMkdir(dstpath)) goto clean;
+    dstpath = sdscatprintf(dstpath,"/%s",fn);
+
+    FILE *outfile = fopen(dstpath, "wb");
+    if (outfile == NULL) {
+        ulog(CCACHE_WARNING, "can't write to %s\n", dstpath);
+    }
+    else {
+        fwrite(buf,len,1,outfile);
+    }
+clean:
+    sdsfree(dstpath);
 }

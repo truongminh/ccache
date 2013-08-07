@@ -36,12 +36,13 @@
 #include <highgui.h>
 #include "sds.h"
 #include "ccache_config.h"
+#include "safe_queue.h"
+#include "bio.h"
 
 #define IMG_ZOOM_DIR_MODE S_IRUSR | S_IWUSR | S_IXUSR
-#define IMG_OK 1
-#define IMG_ERR 0
 
-int imgAuto(sds url);
-int resize(sds fn,  unsigned int width, unsigned int height);
+void imgAuto(safeQueue *sq, struct bio_job *job);
+void resize(sds fn,  unsigned int width, unsigned int height, safeQueue *sq, struct bio_job *job);
+void imgSetDirs(char* src, char *dst);
 
 #endif // IMG_H
