@@ -10,7 +10,10 @@ int string2ll(char *s, size_t slen, long long *value);
 int string2l(char *s, size_t slen, long *value);
 int d2string(char *buf, size_t len, double value);
 long long ustime(void);
+int notsafePath(char *buf);
+
 long long mstime(void);
 
+int utilMkdir(char *dn);
 
 #endif

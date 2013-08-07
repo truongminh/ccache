@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <errno.h>
 #include <ctype.h>
 #include <limits.h>
 #include <math.h>
@@ -8,6 +9,7 @@
 #include <stdarg.h>
 #include <time.h>
 #include <unistd.h>
+#include <sys/stat.h>
 #include "ccache_config.h"
 #include "util.h"
 
@@ -494,4 +496,25 @@ void ulog(int level, const char *fmt, ...) {
     /* Ex: [pid = 9925] localtime = "27 Sep 22:40:17" level = '-' */
     /* message = "DB 0: 1 keys (0 volatile) in 4 slots HT."*/
     fflush(fp);
+}
+
+#define DEFAULT_DIR_MODE S_IRUSR | S_IWUSR | S_IXUSR
+
+int utilMkdir(char *dn)
+{
+    if(mkdir(dn,DEFAULT_DIR_MODE) == 0 || errno == EEXIST) {
+        return 0;
+    }
+    ulog(CCACHE_WARNING,"Cannot open nor create directory [%s]: %s\n", dn, strerror(errno));
+    return 1;
+}
+
+int notsafePath(char *buf)
+{
+    int count = 0;
+    do{
+        if(*buf=='.') count++;
+        else count = 0;
+    }while(*++buf&&count<2);
+    return count == 2;
 }
