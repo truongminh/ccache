@@ -1,4 +1,5 @@
-/* cache.c - A LRU cache implementation
+/* cache.c - A LRU slave cache implementation.
+ * For info about master cache, see mcache.c.
  *
  * Copyright (c) 2013, Nguyen Truong Minh <nguyentrminh at gmail dot com>
  * All rights reserved.
