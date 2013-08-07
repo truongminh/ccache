@@ -39,13 +39,27 @@
 #include "safe_queue.h"
 #include "cache.h"
 
+
 static pthread_t master_thread;
 static dict *master_cache = NULL;
 static dict *file_sizes = NULL;
 static double master_total_mem = 0;
 static double master_total_disk = 0;
 static void *_masterWatch(void *t);
-static list *wait_for_removal;
+struct FileInfo {
+    sds fn;
+    size_t size;
+};
+void freeFileInfo(void *ptr)
+{
+    if(ptr) {
+        struct FileInfo *fi = (struct FileInfo*)ptr;
+        sdsfree(fi->fn);
+        free(fi);
+    }
+}
+
+static list *tmpCreated;
 static objSds *HTTP_NOT_FOUND = NULL;
 static sds statusQuery;
 static unsigned long next_master_refresh_time = 0;
@@ -59,8 +73,8 @@ static sds _masterGetStatus();
 
 void cacheMasterInit() {
     pthread_attr_t attr;
-    wait_for_removal = listCreate();
-    listSetFreeMethod(wait_for_removal,(void (*)(void *ptr))sdsfree);
+    tmpCreated = listCreate();
+    listSetFreeMethod(tmpCreated,freeFileInfo);
     master_cache = dictCreate(&objSdsDictType,NULL);
     slave_caches = listCreate();
     file_sizes = dictCreate(&sdsDoubleDictType,NULL);
@@ -137,7 +151,7 @@ void _masterProcessCacheNew(ccache *c){
             objSdsAddRef(value);
             dictAdd(master_cache,mkey,value);
             /* New IO Job */
-            bioPushStaticFileJob(mkey);
+            bioPushGeneralJob(mkey);
             OBJ_REPORT_REF(value);
         }
         else {
@@ -174,17 +188,20 @@ void _masterProcessFinishedIO() {
         while((type=bioGetResult(tid,&key,&content)))
         {
             objSds *value = dictFetchValue(master_cache,key);
-            if(content == NULL) value->ptr = HTTP_NOT_FOUND->ptr;
-            else value->ptr = content;
-            master_total_mem += sdslen(value->ptr);
-            if(type&BIO_ZOOM_IMAGE) {
-                double *size = (double*)malloc(sizeof(double));
-                *size = strlen(value->ptr);
+            if(content == NULL) {
+                value->ptr = HTTP_NOT_FOUND->ptr;
+            }
+            else {
+                value->ptr = content;
+                master_total_mem += sdslen(content);
+            }
+            if(type&BIO_WRITE_FILE) {
+                struct FileInfo *fi = (struct FileInfo*)malloc(sizeof(struct FileInfo));
+                fi->fn = sdsdup(key);
+                fi->size = sdslen(content);
                 /* if the key already exists, dictAdd does nothing. */
-                if(dictAdd(file_sizes,sdsdup(key),size) == DICT_OK)
-                {
-                    master_total_disk += sdslen(value->ptr);
-                }
+                listAddNodeTail(tmpCreated,fi);
+                master_total_disk += sdslen(content);
             }
             value->state = OBJSDS_OK;
             listIter li;
@@ -200,7 +217,7 @@ void _masterProcessFinishedIO() {
                 /* notify all clients waiting for this entry */
                 _masterUnwatchClient(ce->waiting_clients, ce->val);
             }
-        }
+          }
         }
 }
 
@@ -218,8 +235,6 @@ void _masterProcessCacheOld(ccache *c){
                 master_total_mem -= sdslen(value->ptr);
                 /* TODO: send free mem task to background job threads */
                 dictDelete(master_cache,old_key);
-                /* add to list of waiting to be deleted from disk */
-                listAddNodeTail(wait_for_removal,sdsdup(old_key));
             }
         }
         sdsfree(old_key);
@@ -242,30 +257,15 @@ void _masterProcessStatus() {
             ulog(CCACHE_WARNING,"master cache %s not found",statusQuery);
             next_master_refresh_time = now + MASTER_STATUS_REFRESH_PERIOD*1000;
         }
-    }
-    if(master_total_disk > MASTER_MAX_AVAIL_DISK) {
-        listIter li;
-        listNode *ln;
-        listRewind(wait_for_removal,&li);
-        while ((ln = listNext(&li)) != NULL) {
-            sds key = listNodeValue(ln);
-            objSds *value = dictFetchValue(master_cache,key);
-            if(!value) {
-                // remove file
-                if(key[1]!='.'&&key[1]!='/') {
-                    if(remove(key+1)==0) {
-                        printf("%s deleted\n",key+1);
-                        double *size = dictFetchValue(file_sizes,key);
-                        if(size) {
-                            master_total_disk -= *size;
-                            dictDelete(file_sizes,key); /* mem pointed to by size is also freed */
-                        }
-                    }
-                    else ulog(CCACHE_WARNING," remove [%s] %s",key+1,strerror(errno));
-                }
-            }
-            listDelNode(wait_for_removal,ln);
-        }
+    }    
+    listIter li;
+    listNode *ln;
+    listRewind(tmpCreated,&li);
+    while ((ln = listNext(&li)) != NULL && master_total_disk > MASTER_MAX_AVAIL_DISK) {
+        struct FileInfo *fi = listNodeValue(ln);
+        bioPushRemoveFileJob(fi->fn);
+        master_total_disk -= fi->size;
+        listDelNode(tmpCreated,ln);
     }
 }
 
