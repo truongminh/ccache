@@ -46,9 +46,12 @@
 /* Threads doing background jobs ordered by the master cache */
 #define CCACHE_NUM_BIO_THREADS 4
 
-/* Image Directories and Options */
+#define SERVICE_STATIC_FILE "/static"
+#define SERVICE_IMG_ZOOM "/zoom"
+#define CCACHE_MAX_URI_LEN 1024
+
+/* Image Service Options */
 #define IMG_CROP_AVAILABLE 1
-#define IMG_ZOOM_STRING "zoom"
 #define IMG_MAX_WIDTH 1000
 #define IMG_MAX_HEIGHT 1000
 

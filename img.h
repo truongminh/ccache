@@ -41,8 +41,8 @@
 
 #define IMG_ZOOM_DIR_MODE S_IRUSR | S_IWUSR | S_IXUSR
 
-void imgAuto(safeQueue *sq, struct bio_job *job);
-void resize(sds fn,  unsigned int width, unsigned int height, safeQueue *sq, struct bio_job *job);
+void imgAuto(safeQueue *sq, struct bio_job *job, sds dstpath);
+void resize(sds fn,  unsigned int width, unsigned int height, safeQueue *sq, struct bio_job *job, sds filepath);
 void imgSetDirs(char* src, char *dst);
 
 #endif // IMG_H

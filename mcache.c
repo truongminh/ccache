@@ -38,6 +38,7 @@
 #include "bio.h"
 #include "safe_queue.h"
 #include "cache.h"
+#include "ufile.h"
 
 
 static pthread_t master_thread;
@@ -46,18 +47,6 @@ static dict *file_sizes = NULL;
 static double master_total_mem = 0;
 static double master_total_disk = 0;
 static void *_masterWatch(void *t);
-struct FileInfo {
-    sds fn;
-    size_t size;
-};
-void freeFileInfo(void *ptr)
-{
-    if(ptr) {
-        struct FileInfo *fi = (struct FileInfo*)ptr;
-        sdsfree(fi->fn);
-        free(fi);
-    }
-}
 
 static list *tmpCreated;
 static objSds *HTTP_NOT_FOUND = NULL;
@@ -194,15 +183,15 @@ void _masterProcessFinishedIO() {
             else {
                 value->ptr = content;
                 master_total_mem += sdslen(content);
-            }
-            if(type&BIO_WRITE_FILE) {
-                struct FileInfo *fi = (struct FileInfo*)malloc(sizeof(struct FileInfo));
-                fi->fn = sdsdup(key);
-                fi->size = sdslen(content);
-                /* if the key already exists, dictAdd does nothing. */
-                listAddNodeTail(tmpCreated,fi);
-                master_total_disk += sdslen(content);
-            }
+                if(type&BIO_WRITE_FILE) {
+                    struct FileInfo *fi = (struct FileInfo*)malloc(sizeof(struct FileInfo));
+                    fi->fn = sdsdup(key);
+                    fi->size = sdslen(content);
+                    /* if the key already exists, dictAdd does nothing. */
+                    listAddNodeTail(tmpCreated,fi);
+                    master_total_disk += sdslen(content);
+                }
+            }            
             value->state = OBJSDS_OK;
             listIter li;
             listNode *ln;
@@ -257,7 +246,7 @@ void _masterProcessStatus() {
             ulog(CCACHE_WARNING,"master cache %s not found",statusQuery);
             next_master_refresh_time = now + MASTER_STATUS_REFRESH_PERIOD*1000;
         }
-    }    
+    }
     listIter li;
     listNode *ln;
     listRewind(tmpCreated,&li);

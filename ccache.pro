@@ -23,7 +23,8 @@ SOURCES += \
     ufile.c \
     img.c \
     bio.c \
-    mcache.c
+    mcache.c \
+    mhash.c
 
 HEADERS += \
     dict.h \
@@ -45,7 +46,8 @@ HEADERS += \
     img.h \
     bio.h \
     ccache_config.h \
-    mcache.h
+    mcache.h \
+    mhash.h
 
 
 INCLUDEPATH += /usr/local/include/opencv
