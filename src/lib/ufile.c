@@ -11,9 +11,6 @@
  *   * Redistributions in binary form must reproduce the above copyright
  *     notice, this list of conditions and the following disclaimer in the
  *     documentation and/or other materials provided with the distribution.
- *   * Neither the name of CCACHE nor the names of its contributors may be used
- *     to endorse or promote products derived from this software without
- *     specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
  * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
@@ -35,16 +32,11 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <dirent.h>
 #include "ufile.h"
 #include "lib/util.h"
-#include "mhash.h"
 
-static sds srcDir;
-static sds tmpDir;
 
-int tmpDirLen() {
-    return sdslen(tmpDir);
-}
 
 void freeFileInfo(void *ptr)
 {
@@ -55,61 +47,6 @@ void freeFileInfo(void *ptr)
     }
 }
 
-static inline sds ufilePathTrailingSlash(char *fn) {
-    sds path = sdsnew(fn);
-    if(path&&path[sdslen(path)-1] != '/') {
-            path = sdscat(path,"/");
-    }
-    return path;
-}
-
-sds ufilePathInSrcDir(sds fn) {
-    sds path = sdsdup(srcDir);
-    path = sdscatsds(path,fn);
-    return path;
-}
-
-sds ufilePathInTmpDirCharPtr(char *str) {
-    sds path = sdsdup(tmpDir);
-    path = sdscat(path,str);
-    return path;
-}
-
-sds ufilePathInTmpDirSds(sds fn) {
-    sds path = sdsdup(tmpDir);
-    path = sdscatsds(path,fn);
-    return path;
-}
-
-sds ufilePathInTmpDir(char *base, char *str) {
-    sds path = sdsdup(tmpDir);
-    char *dn = mhashFunction((unsigned char*)str,strlen(str));
-    char *fn = fast_url_encode(str);
-    path = sdscatprintf(path,"%s/%s/%s",base,dn,fn);
-    free(dn);free(fn);
-    return path;
-}
-
-void ufileSetDirs(char *sdn, char *tdn)
-{
-    srcDir = ufilePathTrailingSlash(sdn);
-    tmpDir = ufilePathTrailingSlash(tdn);
-    if(notsafePath(srcDir)){
-        printf("SAFE DIR MUST NOT HAVE 2 CONSECUTIVE '.' :  %s\n",srcDir);
-        exit(EXIT_FAILURE);
-    }
-    if(notsafePath(tmpDir)){
-        printf("SAFE DIR MUST NOT HAVE 2 CONSECUTIVE '.' :  %s\n",tmpDir);
-        exit(EXIT_FAILURE);
-    }
-    if(utilMkdir(tmpDir)) exit(EXIT_FAILURE);
-    ulog(CCACHE_WARNING, "Src Dir: %s\n",srcDir);
-    ulog(CCACHE_WARNING, "Tmp Dir: %s\n",tmpDir);
-    /* service */
-    char zoomservice[2048];
-    sprintf(zoomservice,"%s%s",tmpDir,SERVICE_IMG_ZOOM);
-    if(utilMkdir(zoomservice)) exit(EXIT_FAILURE);
-}
 
 sds getFileContent(char* fn)
 {
@@ -172,4 +109,62 @@ sds ufilMakettpReplyFromBuffer(uchar *buf, size_t len)
     content = sdscatprintf(content,"HTTP/1.1 200 OK\r\nContent-Length: %ld\r\n\r\n",len);
     content = sdscatlen(content,buf,len);
     return content;
+}
+
+int ufilescanFolder(list *files, char *indir, int depth)
+{
+    DIR *dir;
+    struct dirent *ent;
+    if ((dir = opendir (indir)) != NULL) {
+      /* print all the files and directories within directory */
+      while ((ent = readdir (dir)) != NULL) {
+          switch(ent->d_type) {
+          case DT_REG:
+          {
+              sds fn = sdsnew(indir);
+              fn = sdscatprintf(fn,"/%s",ent->d_name);
+              int fd;
+              struct stat fs;
+              if((fd=open(fn,O_RDONLY)) < 0) {
+                  ulog(CCACHE_WARNING,"ufile fstat[%s] %s",fn,strerror(errno));
+                  return 0;
+              }
+              if (fstat(fd, &fs)) {
+                  ulog(CCACHE_WARNING,"ufile fstat[%s] %s",fn,strerror(errno));
+                  return 0;
+              }
+
+              struct FileInfo* fi = (struct FileInfo*) malloc(sizeof(struct FileInfo));
+              fi->fn = fn;
+              fi->size = fs.st_size;
+              /* regular files */
+              listAddNodeTail(files,fi);
+              break;
+          }
+          case DT_DIR:
+              if(depth > 0) {
+                  if(ent->d_name[0]!='.') {
+                      sds path = sdsnew(indir);
+                      path = sdscatprintf(path,"/%s",ent->d_name);
+                      /* folders */
+                      ufilescanFolder(files, path, depth-1);
+                      sdsfree(path);
+                  }
+              }
+              break;
+          case DT_LNK:
+               /* ignore */
+              break;
+          default:
+              break;
+          }
+      }
+      closedir (dir);
+      return 0;
+    }
+    else {
+        /* could not open directory */
+        ulog(CCACHE_WARNING,"cannot scan directory [%s] %s \n",indir, strerror(errno));
+        return 1;
+    }
 }
