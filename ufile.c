@@ -37,9 +37,23 @@
 #include <stdlib.h>
 #include "ufile.h"
 #include "util.h"
+#include "mhash.h"
 
 static sds srcDir;
 static sds tmpDir;
+
+int tmpDirLen() {
+    return sdslen(tmpDir);
+}
+
+void freeFileInfo(void *ptr)
+{
+    if(ptr) {
+        struct FileInfo *fi = (struct FileInfo*)ptr;
+        sdsfree(fi->fn);
+        free(fi);
+    }
+}
 
 static inline sds ufilePathTrailingSlash(char *fn) {
     sds path = sdsnew(fn);
@@ -61,13 +75,20 @@ sds ufilePathInTmpDirCharPtr(char *str) {
     return path;
 }
 
-sds ufilePathInTmpDir(sds fn) {
+sds ufilePathInTmpDirSds(sds fn) {
     sds path = sdsdup(tmpDir);
     path = sdscatsds(path,fn);
     return path;
 }
 
-
+sds ufilePathInTmpDir(char *base, char *str) {
+    sds path = sdsdup(tmpDir);
+    char *dn = mhashFunction((unsigned char*)str,strlen(str));
+    char *fn = fast_url_encode(str);
+    path = sdscatprintf(path,"%s/%s/%s",base,dn,fn);
+    free(dn);free(fn);
+    return path;
+}
 
 void ufileSetDirs(char *sdn, char *tdn)
 {
@@ -84,6 +105,10 @@ void ufileSetDirs(char *sdn, char *tdn)
     if(utilMkdir(tmpDir)) exit(EXIT_FAILURE);
     ulog(CCACHE_WARNING, "Src Dir: %s\n",srcDir);
     ulog(CCACHE_WARNING, "Tmp Dir: %s\n",tmpDir);
+    /* service */
+    char zoomservice[2048];
+    sprintf(zoomservice,"%s%s",tmpDir,SERVICE_IMG_ZOOM);
+    if(utilMkdir(zoomservice)) exit(EXIT_FAILURE);
 }
 
 sds getFileContent(char* fn)
@@ -105,7 +130,7 @@ sds getFileContent(char* fn)
     return content;
 }
 
-sds ufileMakeHttpReplyFromFile(sds filepath)
+sds ufileMakeHttpReplyFromFile(char *filepath)
 {
     FILE* fp;
     fp = fopen (filepath, "r");
