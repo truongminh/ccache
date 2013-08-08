@@ -111,44 +111,39 @@ void *bioProcessBackgroundJobs(void *arg) {
         if(notsafePath(job->name)) {
             job->result = NULL;
             safeQueuePush(bio_job_results[tid],job); /* the current job will be freed by master */
+            ulog(CCACHE_VERBOSE,"Invalid uri: too long or contain [..]");
             goto finish;
         }
-
-        /* Search for static file */
-        if(job->type&BIO_READ_FILE) {
-            /* This is static file job */
-            sds path = ufilePathInSrcDir(job->name);
-            job->result = ufileMakeHttpReplyFromFile(path);
-            sdsfree(path);
-            // free(job);
-            /* Check if this job is a special one such as zoom */
-            /* Of type BIO_ZOOM, not found, not resize yet */
-            if(job->result == NULL &&
-                    stringstartwith(job->name+1,IMG_ZOOM_STRING)) { // start with 'zoom'
-                job->type |= BIO_ZOOM_IMAGE;
-            }
-            else {
+        if(job->type&BIO_GENERAL) {
+            if(stringstartwith(job->name,SERVICE_STATIC_FILE)) {
+                /* This is static file job */
+                sds fn = sdsnew(job->name+strlen(SERVICE_STATIC_FILE));
+                sds path = ufilePathInSrcDir(fn);
+                job->result = ufileMakeHttpReplyFromFile(path);
+                sdsfree(fn);
+                sdsfree(path);
                 safeQueuePush(bio_job_results[tid],job); /* the current job will be freed by master */
                 goto finish;
             }
-        }
-        if(job->type&BIO_ZOOM_IMAGE) {
-            /* Search tmp folder */
-            sds path = ufilePathInTmpDir(job->name);
-            job->result = ufileMakeHttpReplyFromFile(path);
-            sdsfree(path);
-            /* Resize an existing image if possible */
-            if(job->result) {
-                safeQueuePush(bio_job_results[tid],job); /* the current job will be freed by master */
+            else if(stringstartwith(job->name,SERVICE_IMG_ZOOM)) {
+                /* Search tmp folder */
+                sds path = ufilePathInTmpDir(SERVICE_IMG_ZOOM,job->name+strlen(SERVICE_IMG_ZOOM));
+                printf("path %s\n",path);
+                job->result = ufileMakeHttpReplyFromFile(path);                
+                if(job->result) {
+                    safeQueuePush(bio_job_results[tid],job); /* the current job will be freed by master */
+                }
+                else {
+                    /* Resize an existing image if possible */
+                    imgAuto(bio_job_results[tid],job,path);
+                }
+                sdsfree(path);
+                goto finish;
             }
-            else {
-                imgAuto(bio_job_results[tid],job);
-            }
-            goto finish;
         }
         if(job->type&BIO_REMOVE_FILE) {
             // remove file
-            sds path = ufilePathInTmpDir(job->name);
+            sds path = ufilePathInTmpDirSds(job->name);
             if(remove(path)==0) {
                 ulog(CCACHE_DEBUG,"%s deleted\n",path);
             }
