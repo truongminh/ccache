@@ -15,5 +15,7 @@ int notsafePath(char *buf);
 long long mstime(void);
 
 int utilMkdir(char *dn);
+int utilMkSubDirs(char *fullname, int baseoffset);
+char *fast_url_encode(const char *str);
 
 #endif

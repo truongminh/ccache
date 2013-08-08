@@ -512,9 +512,57 @@ int utilMkdir(char *dn)
 int notsafePath(char *buf)
 {
     int count = 0;
+    char *ptr = buf;
     do{
-        if(*buf=='.') count++;
+        if(*ptr=='.') count++;
         else count = 0;
-    }while(*++buf&&count<2);
-    return count == 2;
+    }while(*++ptr&&count<2);
+    return (count == 2) || ((ptr-buf) > CCACHE_MAX_URI_LEN);
+}
+
+#define ISSLASH(c) (c == '/')
+/* ignore base name */
+int utilMkSubDirs(char *fullname, int baseoffset)
+{
+    char *p = fullname + baseoffset;
+    char c;
+    while ((c = *p++))
+    {
+        if (!ISSLASH (c) && ISSLASH(*p))
+        {
+            *p = '\0'; /* Mark the end of dir name */
+            if(utilMkdir(fullname)) {
+                *p = '/'; /* restore slash */
+                return 1;
+            }
+            *p = '/'; /* restore slash */
+        }
+    }
+    return 0;
+}
+
+/* Converts an integer value to its hex character*/
+static inline char to_hex(char code) {
+    static char hex[] = "0123456789abcdef";
+    return hex[code & 15];
+}
+
+/* Returns a url-encoded version of str */
+/* IMPORTANT: be sure to free() the returned string after use */
+char *fast_url_encode(const char *str) {
+    const char *pstr = str;
+    char *buf = (char*) malloc(strlen(str) * 3 + 1), *pbuf = buf;
+    while (*pstr) {
+        if (isalnum(*pstr) || *pstr == '-' || *pstr == '_' || *pstr == '.'
+                || *pstr == '~')
+            *pbuf++ = *pstr;
+        else if (*pstr == ' ')
+            *pbuf++ = '+';
+        else
+            *pbuf++ = '%', *pbuf++ = to_hex(*pstr >> 4), *pbuf++ = to_hex(
+                    *pstr & 15);
+        pstr++;
+    }
+    *pbuf = '\0';
+    return buf;
 }
