@@ -32,8 +32,8 @@
 #include <pthread.h>
 #include <stdlib.h>
 #include "ccache_config.h"
-#include "service/img.h"
-#include "lib/ufile.h"
+
+#include "organizer/bio.h"
 #include "net/ae.h"
 #include "net/anet.h"
 #include "net/client.h"
@@ -99,7 +99,7 @@ int main(int argc, char* argv[])
      }
 
 
-     ufileSetDirs(argv[2],argv[3]);
+     bioSetDirs(argv[2],argv[3]);
 
      requestHandleInitializeGlobalCache();
      cacheMasterInit();

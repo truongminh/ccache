@@ -17,5 +17,6 @@ long long mstime(void);
 int utilMkdir(char *dn);
 int utilMkSubDirs(char *fullname, int baseoffset);
 char *fast_url_encode(const char *str);
+int fast_url_decode(const char *str, char *buf);
 
 #endif

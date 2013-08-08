@@ -37,6 +37,7 @@
 #define MASTER_STATUS_REFRESH_PERIOD 5 /* 10 seconds */
 #define MASTER_MAX_AVAIL_MEM (10L<<20) /* 100MB */
 #define MASTER_MAX_AVAIL_DISK (100L<<20) /* 100MB */
+#define ZOOM_MAX_ON_DISK (5L<<20) /* 5MB */
 
 #define ONE_MEGABYTE (1<<20)
 #define BYTES_TO_MEGABYTES(d) ((double)d/ONE_MEGABYTE)
@@ -47,7 +48,7 @@
 #define CCACHE_NUM_BIO_THREADS 4
 
 #define SERVICE_STATIC_FILE "/static"
-#define SERVICE_IMG_ZOOM "/zoom"
+#define SERVICE_ZOOM "/zoom"
 #define CCACHE_MAX_URI_LEN 1024
 
 /* Image Service Options */
