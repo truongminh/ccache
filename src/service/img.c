@@ -32,9 +32,9 @@
 #include <sys/types.h>
 #include <errno.h>
 #include <stdio.h>
-#include "img.h"
-#include "ufile.h"
-#include "util.h"
+#include "service/img.h"
+#include "lib/ufile.h"
+#include "lib/util.h"
 
 #define IMG_ENCODE_DEFAULT ".jpg"
 

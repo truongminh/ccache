@@ -33,8 +33,8 @@
 #ifndef __AE_H__
 #define __AE_H__
 
-#include "adlist.h"
-#include "dict.h"
+#include "lib/adlist.h"
+#include "lib/dict.h"
 #include "ccache_config.h"
 
 #define AE_SETSIZE (1024*10)    /* Max number of fd supported */

@@ -9,10 +9,10 @@
 #include <errno.h>
 #include "ccache_config.h"
 #include "ae.h"     /* Event driven programming library */
-#include "sds.h"    /* Dynamic safe strings */
-#include "util.h"
-#include "reply.h"
-#include "request.h"
+#include "lib/sds.h"    /* Dynamic safe strings */
+#include "lib/util.h"
+#include "http/reply.h"
+#include "http/request.h"
 
 /* TODO: use loop as time point insteaed of time(NULL) */
 

@@ -1,4 +1,4 @@
-/* bio.h
+/* cache.h - A LRU cache implementation
  *
  * Copyright (c) 2013, Nguyen Truong Minh <nguyentrminh at gmail dot com>
  * All rights reserved.
@@ -28,36 +28,59 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef BIO_H
-#define BIO_H
+#ifndef CCACHE_H
+#define CCACHE_H
 
-#include "sds.h"
-#include "ccache_config.h"
+#include "lib/dict.h"
+#include "lib/adlist.h"
+#include "lib/safe_queue.h"
+#include "net/client.h"
 
-#define BIO_ZOOM_IMAGE 16
-#define BIO_REMOVE_FILE 8
-#define BIO_WRITE_FILE 4
-#define BIO_READ_FILE 2
-#define BIO_GENERAL BIO_READ_FILE
-#define BIO_FINISHED 1
+#define CACHE_OK DICT_OK
+#define CACHE_ERR DICT_ERR
 
-#define CCACHE_THREAD_STACK_SIZE (1024*1024*4)
+#define CACHE_NEW 1
+#define CACHE_OLD 2
 
-/* This structure represents a background Job. It is only used locally to this
- * file as the API deos not expose the internals at all. */
-struct bio_job {
-    time_t time; /* Time at which the job was created. */
-    int type;
-    sds name;
-    sds result;
-};
+list *slave_caches;
 
-void bioInit(void);
-void bioPushGeneralJob(sds name); /* reserved for master  */
-void bioPushRemoveFileJob(sds name);
-void bioPushWriteFileJob(sds name);
-void bioCreateBackgroundJob(int tid, sds name, int type) ;
-unsigned int bioPendingJobsOfThread(int tid);
-int bioGetResult(int tid, sds *name, sds *result);
+typedef struct cacheEntry {
+    dictEntry *de;
+    listNode *ln;
+    void *val;
+    safeQueue *waiting_clients;
+} cacheEntry;
 
-#endif // BIO_H
+typedef struct {
+    dict *data;
+    safeQueue *forOld;
+    safeQueue *forNew;
+    list *accesslist;    
+    void *el;
+} ccache;
+
+#define cacheGetList(c) (c->accesslist)
+ccache *cacheCreate();
+int cacheDeleteStaleEntries(ccache *c, unsigned int n);
+void cacheDelete(ccache* c, sds key);
+cacheEntry *cacheAdd(ccache *c, sds key, void *value);
+cacheEntry *cacheFind(ccache *c, sds key);
+void *cacheFetch(ccache *c, sds key);
+#define cacheNumberOfEntry(c) (c->used)
+
+int cacheRequest(ccache *c, sds key);
+int cacheSendMessage(ccache *c, void *ce, int forWhom);
+void *cacheGetMessage(ccache *c, int forWhom);
+
+ccache *cacheAddSlave(void *el);
+void cacheAddWatchClient(cacheEntry *ce, httpClient *client);
+
+
+#if(CCACHE_LOG_LEVEL == CCACHE_DEBUG)
+    #define REPORT_MASTER_ADD_KEY(key) printf("Master \t Add new entry [%s]\n",key)
+#else
+    #define REPORT_MASTER_ADD_KEY(key) ; /* just ignore */
+#endif
+
+
+#endif // CCACHE_H

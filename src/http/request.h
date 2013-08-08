@@ -1,4 +1,4 @@
-/* cache.h - A LRU cache implementation
+/* request.h - http request
  *
  * Copyright (c) 2013, Nguyen Truong Minh <nguyentrminh at gmail dot com>
  * All rights reserved.
@@ -28,59 +28,67 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef CCACHE_H
-#define CCACHE_H
+#ifndef _REQUEST_H
+#define _REQUEST_H
 
-#include "dict.h"
-#include "adlist.h"
-#include "safe_queue.h"
-#include "client.h"
+#include "lib/sds.h"
+#include "lib/dict.h"
 
-#define CACHE_OK DICT_OK
-#define CACHE_ERR DICT_ERR
-
-#define CACHE_NEW 1
-#define CACHE_OLD 2
-
-list *slave_caches;
-
-typedef struct cacheEntry {
-    dictEntry *de;
-    listNode *ln;
-    void *val;
-    safeQueue *waiting_clients;
-} cacheEntry;
-
-typedef struct {
-    dict *data;
-    safeQueue *forOld;
-    safeQueue *forNew;
-    list *accesslist;    
-    void *el;
-} ccache;
-
-#define cacheGetList(c) (c->accesslist)
-ccache *cacheCreate();
-int cacheDeleteStaleEntries(ccache *c, unsigned int n);
-void cacheDelete(ccache* c, sds key);
-cacheEntry *cacheAdd(ccache *c, sds key, void *value);
-cacheEntry *cacheFind(ccache *c, sds key);
-void *cacheFetch(ccache *c, sds key);
-#define cacheNumberOfEntry(c) (c->used)
-
-int cacheRequest(ccache *c, sds key);
-int cacheSendMessage(ccache *c, void *ce, int forWhom);
-void *cacheGetMessage(ccache *c, int forWhom);
-
-ccache *cacheAddSlave(void *el);
-void cacheAddWatchClient(cacheEntry *ce, httpClient *client);
+#define MAX_REQUEST_SIZE 8096
 
 
-#if(CCACHE_LOG_LEVEL == CCACHE_DEBUG)
-    #define REPORT_MASTER_ADD_KEY(key) printf("Master \t Add new entry [%s]\n",key)
-#else
-    #define REPORT_MASTER_ADD_KEY(key) ; /* just ignore */
+typedef enum {
+    parse_completed = 0,
+    parse_not_completed = 1,
+    parse_error = 4
+} request_parse_state;
+
+typedef enum
+{
+  http_method_start,
+  http_method,
+  http_uri,
+  http_version_h,
+  http_version_t_1,
+  http_version_t_2,
+  http_version_p,
+  http_version_slash,
+  http_version_major_start,
+  http_version_major,
+  http_version_minor_start,
+  http_version_minor,
+  http_expecting_newline_1,
+  http_header_line_start,
+  http_header_lws,
+  http_header_name,
+  http_space_before_header_value,
+  http_header_value,
+  http_expecting_newline_2,
+  http_expecting_newline_3
+}  http_state;
+
+/// A request received from a client.
+typedef struct
+{
+    sds method;
+    sds uri;
+    int version_major;
+    int version_minor;
+    dict *headers;
+    /// The current state of the parser.
+    http_state state;
+    char *ptr;
+    char buf[MAX_REQUEST_SIZE];
+    sds current_header_key;
+    sds current_header_value;
+    int first_header;
+} request;
+
+request *requestCreate();
+void requestFree(request *r);
+sds requestGetHeaderValue(request *r, const sds key);
+void requestReset(request *r);
+request_parse_state requestParse(request* r, char* begin, char* end);
+void requestPrint(request *r);
+
 #endif
-
-
-#endif // CCACHE_H

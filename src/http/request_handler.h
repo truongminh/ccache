@@ -3,7 +3,7 @@
 
 #include "request.h"
 #include "reply.h"
-#include "cache.h"
+#include "cache/cache.h"
 
 #define HANDLER_OK 0
 #define HANDLER_ERR 1

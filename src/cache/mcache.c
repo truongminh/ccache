@@ -30,15 +30,15 @@
 
 #include <pthread.h>
 #include "mcache.h"
-#include "sds.h"
-#include "dict.h"
-#include "dicttype.h"
-#include "adlist.h"
-#include "objSds.h"
-#include "bio.h"
-#include "safe_queue.h"
+#include "lib/sds.h"
+#include "lib/dict.h"
+#include "lib/dicttype.h"
+#include "lib/adlist.h"
+#include "lib/objSds.h"
+#include "organizer/bio.h"
+#include "lib/safe_queue.h"
 #include "cache.h"
-#include "ufile.h"
+#include "lib/ufile.h"
 
 
 static pthread_t master_thread;

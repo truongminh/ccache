@@ -36,7 +36,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include "ufile.h"
-#include "util.h"
+#include "lib/util.h"
 #include "mhash.h"
 
 static sds srcDir;

@@ -34,9 +34,9 @@
 #include "cache.h"
 #include "malloc.h"
 #include "string.h" /* for memcpy */
-#include "dicttype.h"
-#include "dict.h"
-#include "adlist.h"
+#include "lib/dicttype.h"
+#include "lib/dict.h"
+#include "lib/adlist.h"
 
 /*
 * long page_size = sysconf (_SC_PAGESIZE);

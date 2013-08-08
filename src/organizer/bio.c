@@ -3,11 +3,11 @@
 #include <stdlib.h>
 #include <string.h> /* strerror */
 #include <errno.h>
-#include "ufile.h"
-#include "adlist.h"
-#include "safe_queue.h"
-#include "img.h"
-#include "util.h" /* for stringstartwith */
+#include "lib/ufile.h"
+#include "lib/adlist.h"
+#include "lib/safe_queue.h"
+#include "service/img.h"
+#include "lib/util.h" /* for stringstartwith */
 #include "bio.h"
 
 /* Thread-synchronization variable for each thread */

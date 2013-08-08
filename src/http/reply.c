@@ -30,7 +30,7 @@
 
 #include "reply.h"
 #include "malloc.h"
-#include "dicttype.h"
+#include "lib/dicttype.h"
 
 
 reply* replyCreate() {

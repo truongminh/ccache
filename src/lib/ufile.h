@@ -1,7 +1,7 @@
 #ifndef UFILE_H
 #define UFILE_H
 #include <stdint.h>
-#include "sds.h"
+#include "lib/sds.h"
 #include "ccache_config.h"
 
 typedef unsigned char uchar;

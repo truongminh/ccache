@@ -32,15 +32,14 @@
 #include <pthread.h>
 #include <stdlib.h>
 #include "ccache_config.h"
-#include "img.h"
-#include "ufile.h"
-#include "ae.h"
-#include "anet.h"
-#include "client.h"
-#include "mcache.h"
-#include "cache.h"
+#include "service/img.h"
+#include "lib/ufile.h"
+#include "net/ae.h"
+#include "net/anet.h"
+#include "net/client.h"
+#include "cache/mcache.h"
 #include "signal_handler.h"
-#include "request_handler.h"
+#include "http/request_handler.h"
 
 char *program_name;
 

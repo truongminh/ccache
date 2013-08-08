@@ -3,8 +3,8 @@
 #include "malloc.h"
 #include "anet.h"   /* Networking the easy way */
 #include "pthread.h"
-#include "request_handler.h"
-#include "util.h"
+#include "http/request_handler.h"
+#include "lib/util.h"
 
 static int _installWriteEvent(aeEventLoop *el, httpClient *c);
 static void blockClient(aeEventLoop *el, httpClient *c);

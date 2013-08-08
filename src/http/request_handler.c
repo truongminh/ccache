@@ -1,4 +1,4 @@
-/* img.h - resize image
+/* request_handler.c
  *
  * Copyright (c) 2013, Nguyen Truong Minh <nguyentrminh at gmail dot com>
  * All rights reserved.
@@ -28,21 +28,41 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef IMG_H
-#define IMG_H
+#include <stdio.h>
+#include <pthread.h>
+#include "request_handler.h"
+#include "lib/util.h"
 
-#include <sys/stat.h>
-#include <cv.h>
-#include <highgui.h>
-#include "sds.h"
-#include "ccache_config.h"
-#include "safe_queue.h"
-#include "bio.h"
+static ccache *global_cache;
+static pthread_mutex_t mutex_global_cache;
 
-#define IMG_ZOOM_DIR_MODE S_IRUSR | S_IWUSR | S_IXUSR
+void requestHandleInitializeGlobalCache() {
+    pthread_mutex_init(&mutex_global_cache,NULL);
+    global_cache = cacheCreate();
+}
 
-void imgAuto(safeQueue *sq, struct bio_job *job, sds dstpath);
-void resize(sds fn,  unsigned int width, unsigned int height, safeQueue *sq, struct bio_job *job, sds filepath);
-void imgSetDirs(char* src, char *dst);
+int requestHandle(request *req, reply *rep, ccache *c, void *client) {
+    if(c) {
+        /* whether found in cache or newly added to cache,
+         * the obuf of reply will be managed by the cache */
+        replyToBeCached(rep);
+        cacheEntry *ce = cacheFind(c,req->uri);
+        if(ce) {
+            if (ce->val) {
+                rep->obuf = ce->val;
+                return HANDLER_OK;
+            }
+            /* NULL object */
+            cacheAddWatchClient(ce,client);
+            /* block client */
+            return HANDLER_BLOCK;
+        }
+    }
+    return HANDLER_ERR;
+}
 
-#endif // IMG_H
+void requestHandleError(request *req, reply *rep) {
+    (void)req;
+    replySetStatus(rep,reply_ok);
+    replySetContent(rep,"ERROR");
+}

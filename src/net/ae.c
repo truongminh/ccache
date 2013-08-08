@@ -41,7 +41,7 @@
 #include "ae.h"
 #include "malloc.h"
 #include "client.h"
-#include "dicttype.h"
+#include "lib/dicttype.h"
 
 /* Include the best multiplexing layer supported by this system.
  * The following should be ordered by performances, descending. */

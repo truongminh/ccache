@@ -3,53 +3,54 @@ CONFIG += console
 CONFIG -= app_bundle
 CONFIG -= qt
 
-SOURCES += \
-    main.c \
-    dict.c \
-    ae_epoll.c \
-    ae.c \
-    adlist.c \
-    anet.c \
-    util.c \
-    sds.c \
-    reply.c \
-    dicttype.c \
-    client.c \
-    request.c \
-    cache.c \
-    request_handler.c \
-    objSds.c \
-    safe_queue.c \
-    ufile.c \
-    img.c \
-    bio.c \
-    mcache.c \
-    mhash.c
-
 HEADERS += \
-    dict.h \
-    ae.h \
-    adlist.h \
-    anet.h \
-    util.h \
-    sds.h \
-    reply.h \
-    dicttype.h \
-    client.h \
-    signal_handler.h \
-    request.h \
-    cache.h \
-    request_handler.h \
-    objSds.h \
-    safe_queue.h \
-    ufile.h \
-    img.h \
-    bio.h \
-    ccache_config.h \
-    mcache.h \
-    mhash.h
+    src/signal_handler.h \
+    src/ccache_config.h \
+    src/cache/mcache.h \
+    src/cache/cache.h \
+    src/http/request_handler.h \
+    src/http/request.h \
+    src/http/reply.h \
+    src/lib/util.h \
+    src/lib/sds.h \
+    src/lib/safe_queue.h \
+    src/lib/objSds.h \
+    src/lib/dicttype.h \
+    src/lib/dict.h \
+    src/lib/adlist.h \
+    src/lib/ufile.h \
+    src/lib/mhash.h \
+    src/net/client.h \
+    src/net/anet.h \
+    src/net/ae.h \    
+    src/organizer/bio.h \
+    src/service/img.h
+
+SOURCES += \
+    src/main.c \    
+    src/cache/mcache.c \
+    src/cache/cache.c \
+    src/http/request_handler.c \
+    src/http/request.c \
+    src/http/reply.c \
+    src/lib/util.c \
+    src/lib/sds.c \
+    src/lib/safe_queue.c \
+    src/lib/objSds.c \
+    src/lib/dicttype.c \
+    src/lib/dict.c \
+    src/lib/adlist.c \
+    src/lib/ufile.c \
+    src/lib/mhash.c \
+    src/net/client.c \
+    src/net/anet.c \
+    src/net/ae_epoll.c \
+    src/net/ae.c \
+    src/organizer/bio.c \
+    src/service/img.c
 
 
+INCLUDEPATH +=  src/
 INCLUDEPATH += /usr/local/include/opencv
 
 LIBS += -L/usr/local/lib/ -lopencv_core -lopencv_highgui -lopencv_imgproc
@@ -57,7 +58,6 @@ LIBS += -L/usr/lib/ -lpthread
 
 # DEBUG
 LIBS += -L/usr/local/lib/ -lopencv_legacy
-
 
 
 

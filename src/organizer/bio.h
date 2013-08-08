@@ -1,4 +1,4 @@
-/* request.h - http request
+/* bio.h
  *
  * Copyright (c) 2013, Nguyen Truong Minh <nguyentrminh at gmail dot com>
  * All rights reserved.
@@ -28,67 +28,36 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef _REQUEST_H
-#define _REQUEST_H
+#ifndef BIO_H
+#define BIO_H
 
-#include "sds.h"
-#include "dict.h"
+#include "lib/sds.h"
+#include "ccache_config.h"
 
-#define MAX_REQUEST_SIZE 8096
+#define BIO_ZOOM_IMAGE 16
+#define BIO_REMOVE_FILE 8
+#define BIO_WRITE_FILE 4
+#define BIO_READ_FILE 2
+#define BIO_GENERAL BIO_READ_FILE
+#define BIO_FINISHED 1
 
+#define CCACHE_THREAD_STACK_SIZE (1024*1024*4)
 
-typedef enum {
-    parse_completed = 0,
-    parse_not_completed = 1,
-    parse_error = 4
-} request_parse_state;
+/* This structure represents a background Job. It is only used locally to this
+ * file as the API deos not expose the internals at all. */
+struct bio_job {
+    time_t time; /* Time at which the job was created. */
+    int type;
+    sds name;
+    sds result;
+};
 
-typedef enum
-{
-  http_method_start,
-  http_method,
-  http_uri,
-  http_version_h,
-  http_version_t_1,
-  http_version_t_2,
-  http_version_p,
-  http_version_slash,
-  http_version_major_start,
-  http_version_major,
-  http_version_minor_start,
-  http_version_minor,
-  http_expecting_newline_1,
-  http_header_line_start,
-  http_header_lws,
-  http_header_name,
-  http_space_before_header_value,
-  http_header_value,
-  http_expecting_newline_2,
-  http_expecting_newline_3
-}  http_state;
+void bioInit(void);
+void bioPushGeneralJob(sds name); /* reserved for master  */
+void bioPushRemoveFileJob(sds name);
+void bioPushWriteFileJob(sds name);
+void bioCreateBackgroundJob(int tid, sds name, int type) ;
+unsigned int bioPendingJobsOfThread(int tid);
+int bioGetResult(int tid, sds *name, sds *result);
 
-/// A request received from a client.
-typedef struct
-{
-    sds method;
-    sds uri;
-    int version_major;
-    int version_minor;
-    dict *headers;
-    /// The current state of the parser.
-    http_state state;
-    char *ptr;
-    char buf[MAX_REQUEST_SIZE];
-    sds current_header_key;
-    sds current_header_value;
-    int first_header;
-} request;
-
-request *requestCreate();
-void requestFree(request *r);
-sds requestGetHeaderValue(request *r, const sds key);
-void requestReset(request *r);
-request_parse_state requestParse(request* r, char* begin, char* end);
-void requestPrint(request *r);
-
-#endif
+#endif // BIO_H
