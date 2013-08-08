@@ -1,3 +1,5 @@
+/* bio.c - Resize image
+ */
 
 #include <pthread.h>
 #include <stdlib.h>
@@ -6,9 +8,10 @@
 #include "lib/ufile.h"
 #include "lib/adlist.h"
 #include "lib/safe_queue.h"
-#include "service/img.h"
+#include "service/zoom.h"
 #include "lib/util.h" /* for stringstartwith */
 #include "bio.h"
+#include "lib/mhash.h"
 
 /* Thread-synchronization variable for each thread */
 static pthread_mutex_t bio_mutex[CCACHE_NUM_BIO_THREADS];
@@ -19,6 +22,8 @@ static list *bio_jobs[CCACHE_NUM_BIO_THREADS];
 static unsigned long long bio_pending[CCACHE_NUM_BIO_THREADS];
 static safeQueue *bio_job_results[CCACHE_NUM_BIO_THREADS];
 
+static sds srcDir;
+static sds tmpDir;
 
 void *bioProcessBackgroundJobs(void *arg);
 
@@ -27,6 +32,7 @@ void *bioProcessBackgroundJobs(void *arg);
 
 /* Initialize the background system, spawning the thread. */
 void bioInit(void) {
+    zoomServiceInit(srcDir);
     pthread_attr_t attr;
     pthread_t thread;
     size_t stacksize;
@@ -118,32 +124,21 @@ void *bioProcessBackgroundJobs(void *arg) {
             if(stringstartwith(job->name,SERVICE_STATIC_FILE)) {
                 /* This is static file job */
                 sds fn = sdsnew(job->name+strlen(SERVICE_STATIC_FILE));
-                sds path = ufilePathInSrcDir(fn);
+                sds path = bioPathInSrcDir(fn);
                 job->result = ufileMakeHttpReplyFromFile(path);
                 sdsfree(fn);
                 sdsfree(path);
                 safeQueuePush(bio_job_results[tid],job); /* the current job will be freed by master */
                 goto finish;
             }
-            else if(stringstartwith(job->name,SERVICE_IMG_ZOOM)) {
-                /* Search tmp folder */
-                sds path = ufilePathInTmpDir(SERVICE_IMG_ZOOM,job->name+strlen(SERVICE_IMG_ZOOM));
-                printf("path %s\n",path);
-                job->result = ufileMakeHttpReplyFromFile(path);                
-                if(job->result) {
-                    safeQueuePush(bio_job_results[tid],job); /* the current job will be freed by master */
-                }
-                else {
-                    /* Resize an existing image if possible */
-                    imgAuto(bio_job_results[tid],job,path);
-                }
-                sdsfree(path);
+            else if(stringstartwith(job->name,SERVICE_ZOOM)) {
+                zoomImg(bio_job_results[tid],job);
                 goto finish;
             }
         }
         if(job->type&BIO_REMOVE_FILE) {
             // remove file
-            sds path = ufilePathInTmpDirSds(job->name);
+            sds path = bioPathInTmpDirSds(job->name);
             if(remove(path)==0) {
                 ulog(CCACHE_DEBUG,"%s deleted\n",path);
             }
@@ -184,4 +179,61 @@ int bioGetResult(int tid, sds *name, sds *result) {
         free(job);
     }
     return res;
+}
+
+
+int tmpDirLen() {
+    return sdslen(tmpDir);
+}
+
+static sds bioPathTrailingSlash(char *fn) {
+    sds path = sdsnew(fn);
+    if(path&&path[sdslen(path)-1] != '/') {
+            path = sdscat(path,"/");
+    }
+    return path;
+}
+
+sds bioPathInSrcDir(sds fn) {
+    sds path = sdsdup(srcDir);
+    path = sdscatsds(path,fn);
+    return path;
+}
+
+sds bioPathInTmpDirCharPtr(char *str) {
+    sds path = sdsdup(tmpDir);
+    path = sdscat(path,str);
+    return path;
+}
+
+sds bioPathInTmpDirSds(sds fn) {
+    sds path = sdsdup(tmpDir);
+    path = sdscatsds(path,fn);
+    return path;
+}
+
+sds bioPathInTmpDir(char *base, char *str) {
+    sds path = sdsdup(tmpDir);
+    char *dn = mhashFunction((unsigned char*)str,strlen(str));
+    char *fn = fast_url_encode(str);
+    path = sdscatprintf(path,"%s/%s/%s",base,dn,fn);
+    free(dn);free(fn);
+    return path;
+}
+
+void bioSetDirs(char *sdn, char *tdn)
+{
+    srcDir = bioPathTrailingSlash(sdn);
+    tmpDir = bioPathTrailingSlash(tdn);
+    if(notsafePath(srcDir)){
+        printf("SAFE DIR MUST NOT HAVE 2 CONSECUTIVE '.' :  %s\n",srcDir);
+        exit(EXIT_FAILURE);
+    }
+    if(notsafePath(tmpDir)){
+        printf("SAFE DIR MUST NOT HAVE 2 CONSECUTIVE '.' :  %s\n",tmpDir);
+        exit(EXIT_FAILURE);
+    }
+    if(utilMkdir(tmpDir)) exit(EXIT_FAILURE);
+    ulog(CCACHE_WARNING, "Src Dir: %s\n",srcDir);
+    ulog(CCACHE_WARNING, "Tmp Dir: %s\n",tmpDir);;
 }
