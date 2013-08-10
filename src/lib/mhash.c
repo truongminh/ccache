@@ -47,7 +47,7 @@ char *mhashFunction(const unsigned char *buf, int len) {
     while (len--)
         hash = ((hash << 5) ^ hash) ^ (*buf++); /* hash * 33 + c */
     unsigned char *vhash = (unsigned char *)&hash;
-    char *result = (char*)memalign(_TMHASH_ALIGN,_TMHASH_BYTE_SIZE+3);
+    char *result = (char*)malloc(_TMHASH_BYTE_SIZE+3);
     char *ptr = result;
     ptr[_TMHASH_BYTE_SIZE] = '\0';
 #if (_TMHASH == uint32_t)
