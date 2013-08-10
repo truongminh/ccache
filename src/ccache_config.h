@@ -1,6 +1,18 @@
 #ifndef CCACHE_CONFIG_H
 #define CCACHE_CONFIG_H
 
+#define VERSION "1.0"
+#define YEAR "2013"
+#define COPYRIGHT_HOLDER "Nguyen Truong Minh"
+#define AUTHORS "Nguyen Truong Minh (nguyentrminh@gmail.com)"
+#define DESCRIPTION "An image caching server with image resizing, crop and quality on the fly "
+#define PROGRAM_NAME "CCACHE"
+#define LICENSE "GPLv3+: GNU GPL version 3 or later <http://gnu.org/licenses/gpl.html>.\n" \
+                " This is free software: you are free to change and redistribute it.\n" \
+                " There is NO WARRANTY, to the extent permitted by law.\n"
+#define DISPLAY_DESCRIPTION printf("%s %s\n %s\nCopyright (C) %s %s\nLicense %s\nWritten by %s.\n" \
+                            ,PROGRAM_NAME, VERSION, DESCRIPTION, COPYRIGHT_HOLDER, YEAR, LICENSE, AUTHORS);
+
 /* Error codes */
 #define CCACHE_OK                0
 #define CCACHE_ERR               -1
@@ -27,7 +39,7 @@
 #define CCACHE_WARNING 3
 
 
-#define CCACHE_LOG_LEVEL CCACHE_DEBUG
+#define CCACHE_LOG_LEVEL CCACHE_VERBOSE
 #define CCACHE_LOG_FILE "ccache.log"
 
 /* Anti-warning macro... */
