@@ -104,11 +104,14 @@ void zoomImg(safeQueue *sq, struct bio_job *job)
     IplImage* toencode = NULL;
     CvMat* enImg = NULL;
     int notpushed = 1;
-    int iscrop = 0;
-    int quality = IMG_DEFAULT_QUALITY;
+    int iscrop = 1;
+    int p[3];
+    p[0] = CV_IMWRITE_JPEG_QUALITY;
+    p[1] = IMG_DEFAULT_QUALITY;
+    p[2] = 0;
     uchar *buf = NULL;
     size_t len = 0;
-    uri_parse_state state = img_parse_uri(uri,&fn,&width,&height, &iscrop, &quality);
+    uri_parse_state state = img_parse_uri(uri,&fn,&width,&height, &iscrop, &p[1]);
     if(state == parse_error) goto clean;
     // initializations
     srcpath = bioPathInSrcDir(fn);
@@ -121,7 +124,6 @@ void zoomImg(safeQueue *sq, struct bio_job *job)
         goto clean;
     }
 
-    int isresize = 1;
     int src_width = src->width;
     int src_height = src->height;
     int roi_src_width = src_width;
@@ -143,10 +145,10 @@ void zoomImg(safeQueue *sq, struct bio_job *job)
         height = src_height;
     }
     else {
-        isresize = 0;
+        toencode = src;
     }
 
-    if(isresize) {
+    if(!toencode) {
         if(iscrop) {
             int x = (src_width - roi_src_width)/2;
             int y = (src_height - roi_src_height)/2;
@@ -165,21 +167,14 @@ void zoomImg(safeQueue *sq, struct bio_job *job)
 
         toencode = dst;
     }
-    else {
-        toencode = src;
-    }
 
-    int p[3];
-    p[0] = CV_IMWRITE_JPEG_QUALITY;
-    p[1] = IMG_DEFAULT_QUALITY; /* JPEG QUALITY */
-    p[2] = 0;
+
     enImg = cvEncodeImage(IMG_ENCODE_DEFAULT, toencode, p );
     buf = enImg->data.ptr;
     len = enImg->rows*enImg->cols;
     job->result = ufilMakettpReplyFromBuffer(buf,len);
     job->type |= BIO_WRITE_FILE; /* Remind master of new written file  */
-    safeQueuePush(sq,job);
-    saveImage(dstpath, baseoffset, buf, len);
+    safeQueuePush(sq,job);    
     notpushed = 0;
 
   /* clean up and release resources */
@@ -190,9 +185,12 @@ clean:
     }
     if(fn) sdsfree(fn);
     if(srcpath) sdsfree(srcpath);
-    sdsfree(dstpath);
     if(src) cvReleaseImage(&src);
-    if(enImg) cvReleaseMat(&enImg);
+    if(enImg){
+        saveImage(dstpath, baseoffset, buf, len);
+        cvReleaseMat(&enImg);
+    }
+    sdsfree(dstpath);
     if(dst) cvReleaseImage(&dst);
     return;
 }
@@ -206,9 +204,9 @@ void saveImage(char* dstpath, int baseoffset, uchar *buf, size_t len)
         ulog(CCACHE_WARNING, "can't write to %s\n", dstpath);
         return;
     }
-    else {
-        fwrite(buf,len,1,outfile);
-    }
+    /* ?? how to make it write faster */
+    fwrite(buf,len,1,outfile);
+    listAddNodeTail(zoomTmpFiles,sdsnew(dstpath));
     zoomTotalTmpFile += len;
     printf("%s HAVE: %-6.2lfMB USED: %-6.2lf%%\n",
            SERVICE_ZOOM,
@@ -234,7 +232,7 @@ void saveImage(char* dstpath, int baseoffset, uchar *buf, size_t len)
 int img_parse_uri(const char *uri, sds *filename, int *w, int *h, int *c, int *q)
 {
     uri_parse_state state = uri_start;
-    int width = 0, height = 0, crop = 0;
+    int width = 0, height = 0, crop = 1;
     int quality = 0;
     const char *ptr = uri;
     /* uri is of the form: fn?w=x&h=y */
