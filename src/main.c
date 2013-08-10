@@ -29,6 +29,7 @@
  */
 
 #include <stdio.h>
+#include <getopt.h>
 #include <pthread.h>
 #include <stdlib.h>
 #include "ccache_config.h"
@@ -45,6 +46,40 @@ char *program_name;
 
 struct aeEventLoop server; /* server global state */
 void usage (int status);
+
+/* These enum values cannot possibly conflict with the option values
+   ordinarily used by commands, including CHAR_MAX + 1, etc.  Avoid
+   CHAR_MIN - 1, as it may equal -1, the getopt end-of-options value.  */
+
+enum
+{
+  GETOPT_HELP_CHAR = (CHAR_MIN - 2),
+  GETOPT_VERSION_CHAR = (CHAR_MIN - 3)
+};
+
+#define GETOPT_HELP_OPTION_DECL \
+  "help", no_argument, NULL, GETOPT_HELP_CHAR
+#define GETOPT_VERSION_OPTION_DECL \
+  "version", no_argument, NULL, GETOPT_VERSION_CHAR
+#define GETOPT_SELINUX_CONTEXT_OPTION_DECL \
+  "context", required_argument, NULL, 'Z'
+
+#define HELP_OPTION_DESCRIPTION \
+  _("      --help     display this help and exit\n")
+#define VERSION_OPTION_DESCRIPTION \
+  _("      --version  output version information and exit\n")
+
+
+static struct option const longopts[] =
+{
+  {GETOPT_SELINUX_CONTEXT_OPTION_DECL},
+  {"port", required_argument, NULL, 'p'},
+  {"src", required_argument, NULL, 's'},
+  {"tmp", required_argument, NULL, 't'},
+  {GETOPT_HELP_OPTION_DECL},
+  {GETOPT_VERSION_OPTION_DECL},
+  {NULL, 0, NULL, 0}
+};
 
 /* We received a SIGTERM,  shuttingdown here in a safe way, as it is
  * not ok doing so inside the signal handler. */
@@ -86,20 +121,52 @@ void initMaster(aeEventLoop *el, int numslave)
     el->numslave = numslave;
 }
 
+struct ccache_options {
+    int port;
+    char *srcd;
+    char *tmpd;
+};
+
 int main(int argc, char* argv[])
 {
      char *search = strchr(argv[0],'/');
      program_name = (search == NULL)? argv[0]: (search+1);
      setupSignalHandlers();
      char neterr[ANET_ERR_LEN];
-     int port;
-     if(argc < 4 || ((port = atoi(argv[1])) == 0)) {
-         printf("ERROR: port is invalid %s \n",argv[1]);
-         usage(EXIT_SUCCESS);
-     }
+     struct ccache_options options;
+     options.srcd = ".";
+     options.tmpd = ".";
+     int optc;
+     while ((optc = getopt_long (argc, argv, "ps:tZ:", longopts, NULL)) != -1)
+       {
+         switch (optc)
+           {
+           case 'p':
+             if(!optarg || (options.port = atoi(optarg)) < 0) {
+                 printf("ERROR: Invalid port [%s].\nThe port must be a number greater than 0.\n",optarg);
+                 usage(EXIT_FAILURE);
+             }
+             break;
+           case 's':
+             options.srcd = optarg;
+             break;
+           case 't': /* --verbose  */
+             options.tmpd = optarg;
+             break;
+           case GETOPT_HELP_CHAR:
+             usage (EXIT_SUCCESS);
+             break;
+           case GETOPT_VERSION_CHAR:
+             DISPLAY_DESCRIPTION;
+             exit (EXIT_SUCCESS);
+           default:
+             usage (EXIT_FAILURE);
+           }
+       }
 
 
-     bioSetDirs(argv[2],argv[3]);
+
+     bioSetDirs(options.srcd,options.tmpd);
 
      requestHandleInitializeGlobalCache();
      cacheMasterInit();
@@ -123,16 +190,16 @@ int main(int argc, char* argv[])
 
 
     char *bindaddr = "0.0.0.0";
-    int ipfd = anetTcpServer(neterr,port,bindaddr);
+    int ipfd = anetTcpServer(neterr,options.port,bindaddr);
     if (ipfd == ANET_ERR) {
-        printf("ERROR: Opening port %d: %s",port, neterr);
+        printf("ERROR: Opening port %d: %s",options.port, neterr);
         exit(1);
     }
     //aeCreateTimeEvent(el, 2000, serverCron, NULL, NULL);
     if (ipfd > 0 && aeCreateFileEvent(el,ipfd,AE_READABLE,acceptTcpHandler,NULL) == AE_ERR)
         printf("creating file event\n");
     if (ipfd > 0)
-        printf("The server is now ready to accept connections on port %d\n",port);
+        printf("The server is now ready to accept connections on port %d\n",options.port);
     aeMain(el);
     aeDeleteEventLoop(el);
     free(el);
