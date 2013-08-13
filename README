@@ -1,0 +1,29 @@
+ccache
+=======
+
+A high-performance image server
+USAGE: ./ccache --port 80 --src src/ --tmp /tmp
+src/ is the directory to search
+/tmp is the temporaty directory for storing resized image
+
+Example: 
+Get image Penguins.jpg auto crop, jpeg quality 80%
+127.0.0.1/zoom/Penguins.jpg?w=400&h=400&c=1&q=80
+Get static file
+127.0.0.1/static/favicon.ico
+Get status
+127.0.0.1/status
+
+Other Configuration (see ccache_config.h):
+MASTER_TOTAL_MEM: the available memory for storing cached data.
+ZOOM_TOTAL_DISK: the available disk space for tmp data that the server used to store resized images.
+
+License GPLv3+: GNU GPL version 3 or later <http://gnu.org/licenses/gpl.html>.
+This is free software: you are free to change and redistribute it.
+There is NO WARRANTY, to the extent permitted by law.
+
+Written by Nguyen Truong Minh (minhnt@live.com).
+You could drop me an email for any suggestion. I am happy to continue developing this project.
+
+ 
+
