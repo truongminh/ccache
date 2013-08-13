@@ -39,7 +39,7 @@
 #define CCACHE_WARNING 3
 
 
-#define CCACHE_LOG_LEVEL CCACHE_VERBOSE
+#define CCACHE_LOG_LEVEL CCACHE_DEBUG
 #define CCACHE_LOG_FILE "ccache.log"
 
 /* Anti-warning macro... */
@@ -47,8 +47,7 @@
 
 /* Caching Options */
 #define MASTER_STATUS_REFRESH_PERIOD 5 /* 10 seconds */
-#define MASTER_MAX_AVAIL_MEM (10L<<20) /* 100MB */
-#define MASTER_MAX_AVAIL_DISK (100L<<20) /* 100MB */
+#define MASTER_MAX_AVAIL_MEM (100<<10) /* 100KB */
 #define ZOOM_MAX_ON_DISK (5L<<20) /* 5MB */
 
 #define ONE_MEGABYTE (1<<20)

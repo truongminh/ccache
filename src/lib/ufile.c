@@ -48,26 +48,49 @@ void freeFileInfo(void *ptr)
 }
 
 
-sds getFileContent(char* fn)
+sds ufileMakeHttpReplyFromFile(char* fn)
 {
     int fd;
     struct stat fs;
-    if((fd=open(fn,O_RDONLY)) < 0) return NULL;
+    if((fd = open(fn,O_RDONLY)) < 0) {
+        ulog(CCACHE_WARNING,"ufile open[%s] %s",fn,strerror(errno));
+        return NULL;
+    }
     if (fstat(fd, &fs)) {
-        perror ("stat");
+        ulog(CCACHE_WARNING,"ufile fstat[%s] %s",fn,strerror(errno));
         return NULL;
     }
     sds content = sdsempty();
-    sdsMakeRoomFor(content,fs.st_size);
-    int nread = read(fd, content+sdslen(content), fs.st_size);
-    sdsaddlen(content,nread);
-    printf("Size %ld",sdslen(content));
+    size_t size = fs.st_size;
+    content = sdscatprintf(content,"HTTP/1.1 200 OK\r\nContent-Length: %ld\r\n\r\n",size);
+    content = sdsMakeRoomFor(content,size);
+    size_t before = sdslen(content);
+    char* ptr = content + before;
+    size_t nleft = size;
+    ssize_t nread;
+    while(nleft>0) {
+        if((nread = read(fd, content+sdslen(content), nleft)) < 0) {
+            if(errno == EINTR) /* Interrupted by sighandler */
+                nread = 0; /* call read again */
+            else {
+                ulog(CCACHE_WARNING,"ufile read[%s] %s",fn,strerror(errno));
+                sdsfree(content);
+                return NULL;
+            }
+        }
+        else if(nread == 0) {
+            break; /* End-Of-File */
+        }
+        nleft -= nread;
+        ptr += nread;
+    }
+    sdsaddlen(content,size);
     close(fd);
-    if(nread == 0) return NULL;
     return content;
 }
 
-sds ufileMakeHttpReplyFromFile(char *filepath)
+/* Use fopen instead of UNIX open API */
+sds _ufileMakeHttpReplyFromFile(char *filepath)
 {
     FILE* fp;
     fp = fopen (filepath, "r");
@@ -167,4 +190,53 @@ int ufilescanFolder(list *files, char *indir, int depth)
         ulog(CCACHE_WARNING,"cannot scan directory [%s] %s \n",indir, strerror(errno));
         return 1;
     }
+}
+
+/* The write function from RIO package */
+ssize_t ufileWriteFile(char *fn, void *usrbuf, size_t n)
+{
+    int fd;
+    struct stat fs;
+    if((fd = open(fn,O_RDONLY)) < 0) {
+        ulog(CCACHE_WARNING,"ufile open[%s] %s",fn,strerror(errno));
+        return -1;
+    }
+    if (fstat(fd, &fs)) {
+        ulog(CCACHE_WARNING,"ufile fstat[%s] %s",fn,strerror(errno));
+        return -1;
+    }
+    size_t nleft = n;
+    ssize_t nwritten;
+    char *bufp = usrbuf;
+
+    while (nleft > 0) {
+        if ((nwritten = write(fd, bufp, nleft)) <= 0) {
+            if (errno == EINTR) /* Interrupted by sig handler return */
+                nwritten = 0; /* and call write() again */
+            else {
+                ulog(CCACHE_WARNING,"ufile write[%s] %s",fn,strerror(errno));
+                return -1; /* errno set by write() */
+            }
+        }
+        nleft -= nwritten;
+        bufp += nwritten;
+    }
+    return n;
+}
+
+/*
+ * get_filetype - derive file type from file name.
+ * Source code in TINY web server
+ */
+
+void get_filetype(char *filename, char *filetype)
+{
+    if (strstr(filename, ".html"))
+        strcpy(filetype, "text/html");
+    else if (strstr(filename, ".gif"))
+        strcpy(filetype, "image/gif");
+    else if (strstr(filename, ".jpg"))
+        strcpy(filetype, "image/jpeg");
+    else
+        strcpy(filetype, "text/plain");
 }

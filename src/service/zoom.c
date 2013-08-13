@@ -36,7 +36,7 @@
 #include "lib/adlist.h"
 
 #define IMG_ENCODE_DEFAULT ".jpg"
-#define IMG_DEFAULT_QUALITY 80
+#define IMG_DEFAULT_QUALITY 100 /* percent */
 
 
 static sds zoomSrcDir;

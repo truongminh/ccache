@@ -35,6 +35,7 @@
 typedef unsigned char uchar;
 
 sds ufileMakeHttpReplyFromFile(char *filepath);
+sds _ufileMakeHttpReplyFromFile(char *filepath);
 sds ufilMakettpReplyFromBuffer(uchar *buf, size_t len);
 
 

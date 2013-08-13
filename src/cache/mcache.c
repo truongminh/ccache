@@ -41,11 +41,10 @@
 static pthread_t master_thread;
 static dict *master_cache = NULL;
 static double master_total_mem = 0;
-static double master_total_disk = 0;
 static void *_masterWatch(void *t);
 
-static list *tmpCreated;
 static objSds *HTTP_NOT_FOUND = NULL;
+static sds faviconQuery;
 static sds statusQuery;
 static unsigned long next_master_refresh_time = 0;
 
@@ -58,27 +57,38 @@ static sds _masterGetStatus();
 
 void cacheMasterInit() {
     pthread_attr_t attr;
-    tmpCreated = listCreate();
-    listSetFreeMethod(tmpCreated,freeFileInfo);
     master_cache = dictCreate(&objSdsDictType,NULL);
     slave_caches = listCreate();
     master_total_mem = 0;
-    master_total_disk = 0;
+    /* Default Http  Not Found */
     HTTP_NOT_FOUND = objSdsFromSds(sdsnew("HTTP/1.1 404 OK\r\nContent-Length: 9\r\n\r\nNot Found"));
     objSdsAddRef(HTTP_NOT_FOUND);
+    HTTP_NOT_FOUND->state = OBJSDS_OK;
+    /* status */
     statusQuery = sdsnew("/status");
-    objSds *value = objSdsCreate();
-    value->ref = 2; /* ensure that '/status' entry will not be freed */
+    objSds *status_value = objSdsCreate();
+    status_value->ref = 2; /* ensure that '/status' entry will not be freed */
     next_master_refresh_time += time(NULL) + MASTER_STATUS_REFRESH_PERIOD;
-    value->state = OBJSDS_OK;
-    dictAdd(master_cache,statusQuery,value);
-    value->ptr = _masterGetStatus();
+    dictAdd(master_cache,statusQuery,status_value);
+    status_value->ptr = _masterGetStatus();
+    status_value->state = OBJSDS_OK;
+
     /* Initialize mutex and condition variable objects */
     /* For portability, explicitly create threads in a joinable state */
     pthread_attr_init(&attr);
     pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
     pthread_create(&master_thread, &attr, _masterWatch, NULL);
     bioInit();
+
+    /* favicon.ico */
+    faviconQuery = sdsnew("/favicon.ico");
+    objSds *favicon_value = objSdsCreate();
+    favicon_value->ref = 2; /* ensure that the entry will not be freed */
+    favicon_value->state = OBJSDS_WAITING;
+    dictAdd(master_cache,faviconQuery,favicon_value);
+    sds staticFaviconQuery = sdsnew("/static/favicon.ico"); /* static file query */
+    dictAdd(master_cache,staticFaviconQuery,favicon_value);
+    bioPushGeneralJob(staticFaviconQuery);
 }
 
 
@@ -178,14 +188,6 @@ void _masterProcessFinishedIO() {
             else {
                 value->ptr = content;
                 master_total_mem += sdslen(content);
-                if(type&BIO_WRITE_FILE) {
-                    struct FileInfo *fi = (struct FileInfo*)malloc(sizeof(struct FileInfo));
-                    fi->fn = sdsdup(key);
-                    fi->size = sdslen(content);
-                    /* if the key already exists, dictAdd does nothing. */
-                    listAddNodeTail(tmpCreated,fi);
-                    master_total_disk += sdslen(content);
-                }
             }            
             value->state = OBJSDS_OK;
             listIter li;
@@ -242,15 +244,6 @@ void _masterProcessStatus() {
             next_master_refresh_time = now + MASTER_STATUS_REFRESH_PERIOD*1000;
         }
     }
-    listIter li;
-    listNode *ln;
-    listRewind(tmpCreated,&li);
-    while ((ln = listNext(&li)) != NULL && master_total_disk > MASTER_MAX_AVAIL_DISK) {
-        struct FileInfo *fi = listNodeValue(ln);
-        bioPushRemoveFileJob(fi->fn);
-        master_total_disk -= fi->size;
-        listDelNode(tmpCreated,ln);
-    }
 }
 
 sds _masterGetStatus() {
@@ -266,11 +259,9 @@ sds _masterGetStatus() {
     status = sdscatprintf(status,"TOL RAM: %-6.2lfMB\tUSED RAM: %-6.2lf\n",
                           BYTES_TO_MEGABYTES(MASTER_MAX_AVAIL_MEM),
                           BYTES_TO_MEGABYTES(master_total_mem));
-    status = sdscatprintf(status,"TOL DISK: %-6.2lfMB\tUSED DISK: %-6.2lf\n",
-                          BYTES_TO_MEGABYTES(MASTER_MAX_AVAIL_DISK),
-                          BYTES_TO_MEGABYTES(master_total_disk));
     status = sdscatprintf(status,"Detail:\n");
     status = sdscatprintf(status,"%-3s %-32s: %-6s\n"," ","KEY","MEM");
+#ifdef CCACHE_DEBUG
     dictIterator *di = dictGetIterator(master_cache);
     dictEntry *de;
     int idx = 1;
@@ -292,6 +283,7 @@ sds _masterGetStatus() {
         }
     }
     dictReleaseIterator(di);
+#endif
     sds status_reply = sdsnew("HTTP/1.1 200 OK\r\n");
     status_reply = sdscatprintf(status_reply,"Content-Length: %ld\r\n\r\n%s",sdslen(status),status);
     sdsfree(status);

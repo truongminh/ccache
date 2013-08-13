@@ -135,8 +135,13 @@ void *bioProcessBackgroundJobs(void *arg) {
                 zoomImg(bio_job_results[tid],job);
                 goto finish;
             }
+            else {
+                job->result = NULL;
+                safeQueuePush(bio_job_results[tid],job);
+                goto finish;
+            }
         }
-        if(job->type&BIO_REMOVE_FILE) {
+        else if(job->type&BIO_REMOVE_FILE) {
             // remove file
             sds path = bioPathInTmpDirSds(job->name);
             if(remove(path)==0) {
