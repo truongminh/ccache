@@ -28,16 +28,22 @@
 #ifndef UFILE_H
 #define UFILE_H
 #include <stdint.h>
+#include <sys/stat.h>
 #include "sds.h"
 #include "adlist.h"
 #include "ccache_config.h"
 
 typedef unsigned char uchar;
 
+
+
 sds ufileMakeHttpReplyFromFile(char *filepath);
 sds _ufileMakeHttpReplyFromFile(char *filepath);
+sds ufileMmapHttpReply(char *filepath);
 sds ufilMakettpReplyFromBuffer(uchar *buf, size_t len);
 
+ssize_t ufileWriteFile(char *fn, void *src, size_t size);
+ssize_t ufileMmapWrite(char *fn, void *src, size_t size);
 
 struct FileInfo {
     sds fn;
@@ -47,5 +53,19 @@ struct FileInfo {
 void freeFileInfo(void *ptr);
 
 int ufilescanFolder(list *files, char *indir, int depth);
+
+/*
+ *  * Default file access permissions for new files.
+ *   */
+#define FILE_MODE   (S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH)
+
+/*
+ *  * Default permissions for new directories.
+ *   */
+#define DIR_MODE    (FILE_MODE | S_IXUSR | S_IXGRP | S_IXOTH)
+
+#define min(a,b)     ((a) < (b) ? (a) : (b))
+#define max(a,b)     ((a) > (b) ? (a) : (b))
+
 
 #endif // UFILE_H

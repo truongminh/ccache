@@ -89,7 +89,8 @@ void zoomImg(safeQueue *sq, struct bio_job *job)
     char *uri = job->name+strlen(SERVICE_ZOOM)+1;
     sds dstpath = bioPathInTmpDir(SERVICE_ZOOM,uri);
     printf("path %s\n",dstpath);
-    job->result = ufileMakeHttpReplyFromFile(dstpath);
+    //job->result = ufileMakeHttpReplyFromFile(dstpath);
+    job->result = ufileMmapHttpReply(dstpath);
     if(job->result) {
         sdsfree(dstpath);
         safeQueuePush(sq,job); /* the current job will be freed by master */
@@ -198,16 +199,12 @@ clean:
 void saveImage(char* dstpath, int baseoffset, uchar *buf, size_t len)
 {
     /* create subdirs */
-    if(utilMkSubDirs(dstpath,baseoffset)) return;
-    FILE *outfile = fopen(dstpath, "wb");
-    if (outfile == NULL) {
-        ulog(CCACHE_WARNING, "can't write to %s\n", dstpath);
-        return;
+    if(utilMkSubDirs(dstpath,baseoffset)) return;   
+    //if(!ufileWriteFile(dstpath,buf,len)) {
+    if(!ufileMmapWrite(dstpath,buf,len)) {
+        listAddNodeTail(zoomTmpFiles,sdsnew(dstpath));
+        zoomTotalTmpFile += len;
     }
-    /* ?? how to make it write faster */
-    fwrite(buf,len,1,outfile);
-    listAddNodeTail(zoomTmpFiles,sdsnew(dstpath));
-    zoomTotalTmpFile += len;
     printf("%s HAVE: %-6.2lfMB USED: %-6.2lf%%\n",
            SERVICE_ZOOM,
            BYTES_TO_MEGABYTES(ZOOM_MAX_ON_DISK),
