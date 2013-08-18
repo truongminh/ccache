@@ -175,15 +175,14 @@ unsigned int bioPendingJobsOfThread(int tid) {
 
 int bioGetResult(int tid, sds *name, sds *result) {
     struct bio_job *job = safeQueuePop(bio_job_results[tid]);
-    int res = 0;
     if(job)
     {
         *name = job->name;
         *result = job->result;        
-        res = job->type;
         free(job);
+        return 1;
     }
-    return res;
+    return 0;
 }
 
 
@@ -205,7 +204,7 @@ sds bioPathInSrcDir(sds fn) {
     return path;
 }
 
-sds bioPathInTmpDirCharPtr(char *str) {
+sds bioPathInTmpDirCharPtr(char *str) {    
     sds path = sdsdup(tmpDir);
     path = sdscat(path,str);
     return path;

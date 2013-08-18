@@ -22,12 +22,6 @@
 #define CCACHE_MAXIDLETIME       0       /* default client timeout: infinite */
 #define CCACHE_IOBUF_LEN         (1024*4)
 
-/* Asynchronous I/O Options */
-#define AE_MAX_PENDING_CLIENT 30000 /* Number of client pending at acceptor */
-#define AE_MAX_CLIENT_IDLE_TIME 5 /* seconds */
-#define AE_LOOP_INTERVAL 100 /* milliseconds */
-#define AE_LOOP_ELLAPSED(loop,second) (loop%(second*1000/AE_LOOP_INTERVAL)==0)
-
 #define CCACHE_ENCODING_RAW 0     /* Raw representation */
 #define CCACHE_ENCODING_INT 1     /* Encoded as integer */
 
@@ -39,16 +33,34 @@
 #define CCACHE_WARNING 3
 
 
-#define CCACHE_LOG_LEVEL CCACHE_DEBUG
+#define CCACHE_LOG_LEVEL CCACHE_WARNING
 #define CCACHE_LOG_FILE "ccache.log"
 
 /* Anti-warning macro... */
 #define CCACHE_NOTUSED(V) ((void) V)
 
 /* Caching Options */
+/* When the number of entries exceeds the preserved entries,
+ * the cache will be re-index, causing huge-performance penalty.
+ * Another important factor is the efficiency of hash.
+ * As we take only n-least significant bits,
+ * n should be big enough to avoid as much as hash collision.
+ *
+ * Therefore, it is advisable to provide an appropriate preserved entries,
+ * which is 16 times of the typical used number of cache entries.
+ *
+ * An image caching server use 4GB RAM for cache, each entries consume 16KB.
+ * The number of used cache entries is (2^32)/(2^14) = (2^18)
+ * The number of preverved entries should be 2^22
+ */
+
+#define PRESERVED_CACHE_ENTRIES (2<<22)
+
 #define MASTER_STATUS_REFRESH_PERIOD 5 /* 10 seconds */
-#define MASTER_MAX_AVAIL_MEM (100<<10) /* 100KB */
-#define ZOOM_MAX_ON_DISK (5L<<20) /* 5MB */
+#define MASTER_MAX_AVAIL_MEM (50L<<20) /* 100MB */
+#define ZOOM_MAX_ON_DISK (10L<<30) /* 10GB */
+
+
 
 #define ONE_MEGABYTE (1<<20)
 #define BYTES_TO_MEGABYTES(d) ((double)d/ONE_MEGABYTE)
@@ -57,6 +69,14 @@
 #define CCACHE_NUM_WORKER_THREADS    4
 /* Threads doing background jobs ordered by the master cache */
 #define CCACHE_NUM_BIO_THREADS 4
+
+
+/* Asynchronous I/O Options */
+#define AE_MAX_CLIENT_PER_WORKER 16000 /* Number of client pending at acceptor */
+#define AE_MAX_EPOLL_EVENTS 1024
+#define AE_FD_SET_SIZE (CCACHE_NUM_BIO_THREADS*AE_MAX_CLIENT_PER_WORKER)    /* Max number of fd supported */
+#define AE_MAX_CLIENT_IDLE_TIME 5 /* seconds */
+
 
 #define SERVICE_STATIC_FILE "/static"
 #define SERVICE_ZOOM "/zoom"
