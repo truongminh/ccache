@@ -36,10 +36,11 @@
 #include "lib/safe_queue.h"
 #include "cache.h"
 #include "lib/ufile.h"
-
+#include <unistd.h>
 
 static pthread_t master_thread;
 static dict *master_cache = NULL;
+static int master_numjob = 0;
 static double master_total_mem = 0;
 static void *_masterWatch(void *t);
 
@@ -48,7 +49,6 @@ static sds faviconQuery;
 static sds statusQuery;
 static unsigned long next_master_refresh_time = 0;
 
-static void _masterUnwatchClient(safeQueue* watching_clients, sds obuf);
 static void _masterProcessCacheNew(ccache *c);
 static void _masterProcessCacheOld(ccache *c);
 static void _masterProcessFinishedIO();
@@ -58,6 +58,7 @@ static sds _masterGetStatus();
 void cacheMasterInit() {
     pthread_attr_t attr;
     master_cache = dictCreate(&objSdsDictType,NULL);
+    dictExpand(master_cache,PRESERVED_CACHE_ENTRIES);
     slave_caches = listCreate();
     master_total_mem = 0;
     /* Default Http  Not Found */
@@ -105,7 +106,9 @@ void *_masterWatch(void *t)
     ccache *c;
     listIter li;
     listNode *ln;
+    int msecSleep = 1000;
     while (1) {
+        master_numjob = 0;
         listRewind(slave_caches,&li);
         while ((ln = listNext(&li)) != NULL) {
             c = listNodeValue(ln);
@@ -114,24 +117,23 @@ void *_masterWatch(void *t)
             _masterProcessCacheOld(c);
             _masterProcessStatus();
         }
+        if(master_numjob < 1) msecSleep = 10000;
+        else {
+            printf("num job %d\n",master_numjob);
+            msecSleep = 10;
+        }
         /* TODO: flexible sleep time */
-        usleep(1000);
+        usleep(msecSleep);
     }
     pthread_exit(NULL);
 }
 
-void _masterUnwatchClient(safeQueue* watching_clients, sds obuf) {
-    httpClient *client;
-    while((client = safeQueuePop(watching_clients)) != NULL) {
-        unblockClient(client,obuf);
-        /* */
-    }
-}
 
 void _masterProcessCacheNew(ccache *c){
     cacheEntry *ce;
-    while((ce=cacheGetMessage(c,CACHE_NEW)) != NULL)
+    while((ce=cacheGetMessage(c,CACHE_REQUEST_NEW)) != NULL)
     {
+        master_numjob++;
         sds key = ce->de->key;
         objSds *value = dictFetchValue(master_cache,key);
         if(!value) {
@@ -159,8 +161,8 @@ void _masterProcessCacheNew(ccache *c){
                 ce->val = value->ptr;
                 /* Every when accept new ce, the obj ref is increased */
                 objSdsAddRef(value);
-                /* Unblock waiting clients */
-                _masterUnwatchClient(ce->waiting_clients, ce->val);
+                /* Reply slave cache about the available data */
+                cacheSendMessage(c,ce,CACHE_REPLY_NEW);
                 break;
             default:
                 /* Error Unknown Object State */
@@ -176,11 +178,11 @@ void _masterProcessFinishedIO() {
     sds content = NULL;
     /* For each IO worker */
     int tid = 0;
-    int type = 0;
     /* Polling all io thread */
     for(tid=0;tid<CCACHE_NUM_BIO_THREADS;tid++) {
-        while((type=bioGetResult(tid,&key,&content)))
+        while(bioGetResult(tid,&key,&content))
         {
+            master_numjob++;
             objSds *value = dictFetchValue(master_cache,key);
             if(content == NULL) {
                 value->ptr = HTTP_NOT_FOUND->ptr;
@@ -201,7 +203,8 @@ void _masterProcessFinishedIO() {
                 ce = listNodeValue(ln);
                 ce->val = value->ptr;
                 /* notify all clients waiting for this entry */
-                _masterUnwatchClient(ce->waiting_clients, ce->val);
+                cacheSendMessage(ce->mycache,ce,CACHE_REPLY_NEW);
+                printf("Cache in Worker %.2lf \n", (double)(clock()));
             }
           }
         }
@@ -209,8 +212,9 @@ void _masterProcessFinishedIO() {
 
 void _masterProcessCacheOld(ccache *c){
     sds old_key;
-    while((old_key=cacheGetMessage(c,CACHE_OLD)) != NULL)
+    while((old_key=cacheGetMessage(c,CACHE_REQUEST_OLD)) != NULL)
     {
+        master_numjob++;
         objSds *value = dictFetchValue(master_cache,old_key);
         if(value) {
             objSdsSubRef(value);
@@ -230,7 +234,7 @@ void _masterProcessCacheOld(ccache *c){
 void _masterProcessStatus() {
     /* Check if status is expired */
     unsigned long now = time(NULL);
-    if(next_master_refresh_time<now) {
+    if(next_master_refresh_time < now) {
         objSds *value = dictFetchValue(master_cache,statusQuery);
         if(value) {
             sds oldptr = value->ptr;
@@ -259,9 +263,9 @@ sds _masterGetStatus() {
     status = sdscatprintf(status,"TOL RAM: %-6.2lfMB\tUSED RAM: %-6.2lf\n",
                           BYTES_TO_MEGABYTES(MASTER_MAX_AVAIL_MEM),
                           BYTES_TO_MEGABYTES(master_total_mem));
+#if (CCACHE_LOG_LEVEL == CCACHE_DEBUG)
     status = sdscatprintf(status,"Detail:\n");
     status = sdscatprintf(status,"%-3s %-32s: %-6s\n"," ","KEY","MEM");
-#ifdef CCACHE_DEBUG
     dictIterator *di = dictGetIterator(master_cache);
     dictEntry *de;
     int idx = 1;
