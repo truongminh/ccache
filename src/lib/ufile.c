@@ -189,6 +189,7 @@ int ufilescanFolder(list *files, char *indir, int depth)
               }
               if (fstat(fd, &fs)) {
                   ulog(CCACHE_WARNING,"ufile fstat[%s] %s",fn,strerror(errno));
+                  close(fd);
                   return 0;
               }
 
@@ -197,6 +198,7 @@ int ufilescanFolder(list *files, char *indir, int depth)
               fi->size = fs.st_size;
               /* regular files */
               listAddNodeTail(files,fi);
+              close(fd);
               break;
           }
           case DT_DIR:
@@ -245,12 +247,14 @@ ssize_t ufileWriteFile(char *fn, void *src, size_t size)
                 nwritten = 0; /* and call write() again */
             else {
                 ulog(CCACHE_WARNING,"ufile write[%s] %s",fn,strerror(errno));
+                close(fd);
                 return -1; /* errno set by write() */
             }
         }
         nleft -= nwritten;
         bufp += nwritten;
     }
+    close(fd);
     return 0;
 }
 
@@ -264,15 +268,18 @@ ssize_t ufileMmapWrite(char *fn, void *src, size_t size)
     /* set size of output file */
     if (lseek(fdout, size - 1, SEEK_SET) == -1) {
        ulog(CCACHE_WARNING,"ufile lseek[%s] %s",fn,strerror(errno));
+       close(fdout);
        return -1;
     }
     if (write(fdout, "", 1) != 1){
        ulog(CCACHE_WARNING,"ufile test write[%s] %s",fn,strerror(errno));
+       close(fdout);
        return -1;
     }
     void *dst;
     if ((dst = mmap(0, size, PROT_READ | PROT_WRITE,MAP_SHARED, fdout, 0)) == MAP_FAILED){
         ulog(CCACHE_WARNING,"ufile mmap[%s] %s",fn,strerror(errno));
+        close(fdout);
         return -1;
      }
     memcpy(dst, src, size); /* does the file copy */
