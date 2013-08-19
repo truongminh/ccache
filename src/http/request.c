@@ -69,8 +69,11 @@ void requestFree(request *r) {
     sdsfree(r->method);
     sdsfree(r->uri);
     dictRelease(r->headers);
-    sdsfree(r->current_header_key);
-    sdsfree(r->current_header_value);
+    /* current_header and current_value was not added to headers */
+    if(r->state == http_expecting_newline_2) {
+        sdsfree(r->current_header_key);
+        sdsfree(r->current_header_value);
+    }
     free(r);
 }
 
