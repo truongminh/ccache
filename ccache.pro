@@ -61,6 +61,9 @@ LIBS += -L/usr/lib/ -lpthread
 # DEBUG
 LIBS += -L/usr/local/lib/ -lopencv_legacy
 
+OTHER_FILES += \
+    build/Makefile
+
 
 
 
