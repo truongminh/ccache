@@ -8,13 +8,13 @@
 #include <unistd.h>
 #include <errno.h>
 #include "ccache_config.h"
-#include "ae.h"     /* Event driven programming library */
 #include "lib/sds.h"    /* Dynamic safe strings */
 #include "lib/util.h"
 #include "http/reply.h"
 #include "http/request.h"
+#include "http_server.h"
 
-/* TODO: use loop as time point insteaed of time(NULL) */
+extern httpServer server;
 
 /*-----------------------------------------------------------------------------
  * Data types
@@ -28,9 +28,10 @@ typedef struct httpClient {
     int bufpos;
     request *req;
     time_t lastinteraction; /* time of the last interaction, used for timeout */
-    listNode *node; /* point to the position this clients in its eventLoop's list of clients*/
+    listNode *elNode; /* point to the position this clients in its eventLoop's list of clients*/
     int blocked;
     aeEventLoop *el;
+    list *ceList; /* point to the position of this clients in cache waiting list */
 } httpClient;
 
 typedef struct {
@@ -50,11 +51,10 @@ httpClient *createClient(aeEventLoop *el, int fd, const char *ip, int port);
 int closeTimedoutClients(aeEventLoop *el);
 #endif
 
-void freeClient(aeEventLoop *el, httpClient *c);
+void freeClient(httpClient *c);
 void resetClient(httpClient *c);
-void sendReplyToClient(aeEventLoop *el, int fd, void *privdata, int mask);
-void acceptTcpHandler(aeEventLoop *el, int fd, void *privdata, int mask);
-void readQueryFromClient(aeEventLoop *el, int fd, void *privdata, int mask);
+void sendReplyToClient(aeEventLoop *el, int fd, httpClient *c);
+void readQueryFromClient(aeEventLoop *el, int fd, httpClient *c);
 
 void unblockClient(httpClient *c, sds obuf);
 

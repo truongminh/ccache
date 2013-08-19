@@ -29,6 +29,7 @@
 #include <pthread.h>
 #include "request_handler.h"
 #include "lib/util.h"
+#include "net/client.h"
 
 static ccache *global_cache;
 static pthread_mutex_t mutex_global_cache;
@@ -36,6 +37,11 @@ static pthread_mutex_t mutex_global_cache;
 void requestHandleInitializeGlobalCache() {
     pthread_mutex_init(&mutex_global_cache,NULL);
     global_cache = cacheCreate();
+}
+
+static void requestHandleAddWaitingClient(cacheEntry *ce, httpClient *client) {
+    listAddNodeTail(ce->waiting_clients,client);
+    client->ceList = ce->waiting_clients;
 }
 
 int requestHandle(request *req, reply *rep, ccache *c, void *client) {
@@ -50,7 +56,7 @@ int requestHandle(request *req, reply *rep, ccache *c, void *client) {
                 return HANDLER_OK;
             }
             /* NULL object */
-            cacheAddWatchClient(ce,client);
+            requestHandleAddWaitingClient(ce,client);
             /* block client */
             return HANDLER_BLOCK;
         }

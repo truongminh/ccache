@@ -496,6 +496,9 @@ void ulog(int level, const char *fmt, ...) {
     /* Ex: [pid = 9925] localtime = "27 Sep 22:40:17" level = '-' */
     /* message = "DB 0: 1 keys (0 volatile) in 4 slots HT."*/
     fflush(fp);
+#if (CCACHE_LOG_LEVEL > CCACHE_DEBUG)
+    fclose(fp);
+#endif
 }
 
 #define DEFAULT_DIR_MODE S_IRUSR | S_IWUSR | S_IXUSR

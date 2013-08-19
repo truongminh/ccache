@@ -33,86 +33,44 @@
 #ifndef __AE_H__
 #define __AE_H__
 
+#include <sys/epoll.h>
 #include "lib/adlist.h"
-#include "lib/dict.h"
 #include "ccache_config.h"
+#include "cache/cache.h"
 
-#define AE_SETSIZE (1024*10)    /* Max number of fd supported */
 
 #define AE_OK 0
 #define AE_ERR -1
 
-#define AE_NONE 0
-#define AE_READABLE 1
-#define AE_WRITABLE 2
-
-#define AE_FILE_EVENTS 1
-#define AE_TIME_EVENTS 2
-#define AE_ALL_EVENTS (AE_FILE_EVENTS|AE_TIME_EVENTS)
-#define AE_DONT_WAIT 4
-
-#define AE_NOMORE -1
+#define AE_UNACTIVATED 0
+#define AE_READABLE EPOLLIN
+#define AE_WRITABLE EPOLLOUT
 
 /* Macros */
 #define AE_NOTUSED(V) ((void) V)
 
-struct aeEventLoop;
-
-/* Types and data structures */
-typedef void aeFileProc(struct aeEventLoop *eventLoop, int fd, void *clientData, int mask);
-typedef int aeTimeProc(struct aeEventLoop *eventLoop, long long id, void *clientData);
-typedef void aeEventFinalizerProc(struct aeEventLoop *eventLoop, void *clientData);
-typedef void aeBeforeSleepProc(struct aeEventLoop *eventLoop);
-
 /* File event structure */
 typedef struct aeFileEvent {
-    int mask; /* one of AE_(READABLE|WRITABLE) */
-    aeFileProc *rfileProc;
-    aeFileProc *wfileProc;
+    struct epoll_event *ee;
     void *clientData;
 } aeFileEvent;
 
-/* Time event structure */
-typedef struct aeTimeEvent {
-    long long id; /* time event identifier. */
-    long when_sec; /* seconds */
-    long when_ms; /* milliseconds */
-    aeTimeProc *timeProc;
-    aeEventFinalizerProc *finalizerProc;
-    void *clientData;
-    struct aeTimeEvent *next;
-} aeTimeEvent;
-
-/* A fired event */
-typedef struct aeFiredEvent {
-    int fd;
-    int mask;
-} aeFiredEvent;
 
 /* State of an event based program */
 typedef struct aeEventLoop {
-    int maxfd;
-    long long timeEventNextId;
-    /* size of events array and fired array must be
-       equal to the number of event parameter in epoll_wait
-     */
-    aeFileEvent events[AE_SETSIZE]; /* Registered events */
-    aeFiredEvent fired[AE_SETSIZE]; /* Fired events */
-    aeTimeEvent *timeEventHead;
+    int epfd; // epoll file descriptor. Note: fd is simply an int
+    // our server has only one epoll instance.
+    struct epoll_event newees[AE_MAX_EPOLL_EVENTS];
+    int numfds;
     int stop;
     void *apidata; /* This is used for polling API specific data */
     /* for epoll apidata = {epoll fd, array of events} */
-    aeBeforeSleepProc *beforesleep;
     list *clients;    
-    dict *bclients;
-    void *cache;
-    struct aeEventLoop **slaves;
+    ccache *cache;
     int myid;
-    int nextSlaveID;
-    int numslave;
-    unsigned long loop;
-#ifdef AE_MAX_PENDING_CLIENT
-    unsigned long maxclients;
+    int numworkers;
+#ifdef AE_MAX_CLIENT_PER_WORKER
+    unsigned int maxclients;
 #endif
 #ifdef AE_MAX_CLIENT_IDLE_TIME
     unsigned int maxidletime;
@@ -123,18 +81,11 @@ typedef struct aeEventLoop {
 aeEventLoop *aeCreateEventLoop(void);
 void aeDeleteEventLoop(aeEventLoop *eventLoop);
 void aeStop(aeEventLoop *eventLoop);
-int aeCreateFileEvent(aeEventLoop *eventLoop, int fd, int mask,
-        aeFileProc *proc, void *clientData);
-void aeDeleteFileEvent(aeEventLoop *eventLoop, int fd, int mask);
-int aeGetFileEvents(aeEventLoop *eventLoop, int fd);
-long long aeCreateTimeEvent(aeEventLoop *eventLoop, long long milliseconds,
-        aeTimeProc *proc, void *clientData,
-        aeEventFinalizerProc *finalizerProc);
-int aeDeleteTimeEvent(aeEventLoop *eventLoop, long long id);
-int aeProcessEvents(aeEventLoop *eventLoop, int flags);
-int aeWait(int fd, int mask, long long milliseconds);
+int aeCreateFileEvent(aeEventLoop *eventLoop, int fd, int mask, void *clientData);
+int aeModifyFileEvent(aeEventLoop *eventLoop, int fd, int mask, void *clientData);
+int aeDeleteFileEvent(aeEventLoop *eventLoop, int fd);
+void aeProcessEvents(aeEventLoop *eventLoop);
 void aeMain(aeEventLoop *eventLoop);
 char *aeGetApiName(void);
-void aeSetBeforeSleepProc(aeEventLoop *eventLoop, aeBeforeSleepProc *beforesleep);
 
 #endif

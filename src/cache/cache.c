@@ -34,6 +34,7 @@
 #include "lib/dicttype.h"
 #include "lib/dict.h"
 #include "lib/adlist.h"
+#include "ccache_config.h"
 
 /*
 * long page_size = sysconf (_SC_PAGESIZE);
@@ -69,8 +70,10 @@ ccache *cacheCreate() {
     ccache *c = malloc(sizeof(*c));
     c->accesslist = listCreate();
     c->data = dictCreate(&ccacheType,NULL);
-    c->forOld = safeQueueCreate();
-    c->forNew = safeQueueCreate();
+    dictExpand(c->data,PRESERVED_CACHE_ENTRIES);
+    c->outboxOld = safeQueueCreate();
+    c->outboxNew = safeQueueCreate();
+    c->inboxNew = safeQueueCreate();
     return c;
 }
 
@@ -90,9 +93,10 @@ cacheEntry *cacheAdd(ccache *c, sds key, void *value) {
         free(ce);
         return NULL;
     }
-    ce->waiting_clients = safeQueueCreate();
+    ce->waiting_clients = listCreate();
     ce->de->val = ce;
     ce->val = value;
+    ce->mycache = c;
     return ce;
 }
 
@@ -109,7 +113,7 @@ cacheEntry *cacheFind(ccache *c, sds key) {
     cacheEntry *ce = dictFetchValue(c->data,key);
     if(ce == NULL) {
         ce = cacheAdd(c,sdsdup(key),NULL);
-        cacheSendMessage(c,ce,CACHE_NEW);
+        cacheSendMessage(c,ce,CACHE_REQUEST_NEW);
     }
     return ce;
 }
@@ -121,7 +125,7 @@ void cacheDelete(ccache* c, sds key) {
      */
     if(ce&&ce->val)
     {
-        cacheSendMessage(c,sdsdup(key),CACHE_OLD);
+        cacheSendMessage(c,sdsdup(key),CACHE_REQUEST_OLD);
         listDelNode(c->accesslist,ce->ln);
         dictDelete(c->data,key);
     }
@@ -141,22 +145,29 @@ int cacheDeleteStaleEntries(ccache *c, unsigned int n) {
     return n - remain;
 }
 
-int cacheSendMessage(ccache *c, void *ce, int forWhom){
-    if(forWhom == CACHE_NEW)
-        return (safeQueuePush(c->forNew,ce) == SAFE_QUEUE_OK)? CACHE_OK:CACHE_ERR;
-    if(forWhom == CACHE_OLD)
-        return (safeQueuePush(c->forOld,ce) == SAFE_QUEUE_OK)? CACHE_OK:CACHE_ERR;
-    return CACHE_ERR;
+int cacheSendMessage(ccache *c, void *msg, int forWhom){
+    switch(forWhom) {
+        case CACHE_REQUEST_NEW:
+            return (safeQueuePush(c->outboxNew,msg) == SAFE_QUEUE_OK)? CACHE_OK:CACHE_ERR;
+        case CACHE_REQUEST_OLD:
+            return (safeQueuePush(c->outboxOld,msg) == SAFE_QUEUE_OK)? CACHE_OK:CACHE_ERR;
+        case CACHE_REPLY_NEW:
+            return (safeQueuePush(c->inboxNew,msg) == SAFE_QUEUE_OK)? CACHE_OK:CACHE_ERR;
+        default:
+            return CACHE_ERR;
+    }
 }
 
 void *cacheGetMessage(ccache *c, int forWhom){
-    if(forWhom == CACHE_NEW)
-        return safeQueuePop(c->forNew);
-    if(forWhom== CACHE_OLD)
-        return safeQueuePop(c->forOld);
-    return NULL;
+    switch(forWhom) {
+        case CACHE_REQUEST_NEW:
+            return safeQueuePop(c->outboxNew);
+        case CACHE_REQUEST_OLD:
+            return safeQueuePop(c->outboxOld);
+        case CACHE_REPLY_NEW:
+            return safeQueuePop(c->inboxNew);
+        default:
+            return NULL;
+    }
 }
 
-void cacheAddWatchClient(cacheEntry *ce, httpClient *client) {
-    safeQueuePush(ce->waiting_clients,client);
-}

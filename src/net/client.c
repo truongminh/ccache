@@ -5,60 +5,11 @@
 #include "pthread.h"
 #include "http/request_handler.h"
 #include "lib/util.h"
+#include "net/http_server.h"
 
 static int _installWriteEvent(aeEventLoop *el, httpClient *c);
 static void blockClient(aeEventLoop *el, httpClient *c);
-/* -----------------------------------------------------------------------------
- * Low level functions to accept connection and create new clients
- * -------------------------------------------------------------------------- */
-static aeEventLoop *nextClient(aeEventLoop* el){
-    int current_id = el->nextSlaveID;
-    el->nextSlaveID++;
-    if (el->nextSlaveID == el->numslave) el->nextSlaveID = 0;
-    return el->slaves[current_id];
-}
 
-void acceptTcpHandler(aeEventLoop *el, int fd, void *privdata, int mask) {
-    int cport, cfd;
-    char cip[128];
-    CCACHE_NOTUSED(el);
-    CCACHE_NOTUSED(mask);
-    CCACHE_NOTUSED(privdata);
-
-    /* Accept new connection */
-    char neterr[ANET_ERR_LEN];
-    cfd = anetTcpAccept(neterr, fd, cip, &cport);
-    if (cfd == AE_ERR) {
-        ulog(CCACHE_WARNING,"Accepting client connection: %s", neterr);
-        return;
-    }
-    ulog(CCACHE_DEBUG,"Accepted %s:%d", cip, cport);
-    /* Create a new client and add it to server.clients list */
-    /* NOTICE: must be called via function */
-    httpClient *c;
-    /* NOTICE: not fd but cfd. */
-    /* This el is from the master.
-     * We may Change el to one from workers.
-     */
-    aeEventLoop *nextEL = nextClient(el);    
-    if ((c = createClient(nextEL,cfd,cip,cport)) == NULL) {
-        ulog(CCACHE_WARNING,"Error allocating resoures for the client");
-        freeClient(nextEL,c); /* May be already closed, just ingore errors */
-        return;
-    }
-#ifdef AE_MAX_PENDING_CLIENT
-    /* Check for max client */
-    if (nextEL->maxclients && listLength(nextEL->clients) > nextEL->maxclients) {
-        char *err = "-ERR max number of clients reached\r\n";
-        /* That's a best effort error message, don't check write errors */
-        if (write(cfd,err,strlen(err)) == -1) {
-            /* Nothing to do, Just to avoid the warning... */
-        }
-        freeClient(nextEL,c);
-        return;
-    }
-#endif
-}
 
 
 httpClient *createClient(aeEventLoop *el, int fd, const char* ip, int port) {
@@ -73,53 +24,54 @@ httpClient *createClient(aeEventLoop *el, int fd, const char* ip, int port) {
     c->lastinteraction = time(NULL);
     c->ip = strdup(ip);
     c->port = port;
-    c->node = NULL;
+    c->elNode = NULL;
     c->blocked = 0;
     c->el = el;
-    if (aeCreateFileEvent(el,fd,AE_READABLE,readQueryFromClient, c) == AE_ERR)
+    c->elNode = listAddNodeTailGetNode(el->clients,c);
+    if (aeCreateFileEvent(el, fd, AE_READABLE, c) == AE_ERR)
     {
-        close(fd);
-        freeClient(el,c);
+        printf("create client fail\n");
+        freeClient(c);
         return NULL;
     }
     return c;
 }
 
-void readQueryFromClient(aeEventLoop *el, int fd, void *privdata, int mask) {
-    httpClient *c = (httpClient*) privdata;
-    if(c->node == NULL) c->node = listAddNodeTailGetNode(el->clients,c);
+
+void readQueryFromClient(aeEventLoop *el, int fd, httpClient *c) {
     char buf[CCACHE_IOBUF_LEN];
     int nread;
-    CCACHE_NOTUSED(mask);
     nread = read(fd, buf, CCACHE_IOBUF_LEN);
     if (nread == -1) {
         if (errno == EAGAIN) { /* try again */
             nread = 0;
         } else {
             ulog(CCACHE_VERBOSE, "Reading from client: %s",strerror(errno));
-            freeClient(el,c);
+            freeClient(c);
             return;
         }
     } else if (nread == 0) {
-        ulog(CCACHE_VERBOSE, "Client closed connection");
-        freeClient(el,c);
+        ulog(CCACHE_VERBOSE, "End of client request");
+        freeClient(c);
         return;
     }
     if (nread>0) {
+        printf("Read Request: %.2lf \n", (double)(clock()));
         c->lastinteraction = time(NULL);
-        listMoveNodeToTail(el->clients,c->node);
+        listMoveNodeToTail(el->clients,c->elNode);
         /* NOTICE: nread or nread-1 */
         switch(requestParse(c->req,buf,buf+nread)){
         case parse_not_completed:
             break;
         case parse_completed:
-        {
+        {            
             int handle_result = requestHandle(c->req,c->rep,el->cache,c);
             if(handle_result == HANDLER_BLOCK){
                 blockClient(el,c);
             }
             else {
                 if (_installWriteEvent(el, c) != CCACHE_OK) return;
+                printf("Install Write: %.2lf\n", (double)(clock()));
                 /* For HANDLE_OK there is nothing to do */
                 if(handle_result == HANDLER_ERR) requestHandleError(c->req,c->rep);
             }
@@ -137,16 +89,13 @@ void readQueryFromClient(aeEventLoop *el, int fd, void *privdata, int mask) {
     }
 }
 
-void sendReplyToClient(aeEventLoop *el, int fd, void *privdata, int mask) {
-    httpClient *c = privdata;
+void sendReplyToClient(aeEventLoop *el, int fd, httpClient *c) {
     int nwritten = 0;
 
-    CCACHE_NOTUSED(el);
-    CCACHE_NOTUSED(mask);
-    // if (totwritten > REDIS_MAX_WRITE_PER_EVENT)
-    sds obuf = replyToBuffer(c->rep);
-    int towrite = sdslen(obuf) - c->bufpos;
-    if(obuf) {
+    CCACHE_NOTUSED(el);    
+    if(c->rep) {
+        sds obuf = replyToBuffer(c->rep);
+        int towrite = sdslen(obuf) - c->bufpos;
         nwritten = write(fd, obuf+c->bufpos,towrite);
         /* Content */
         if (nwritten == -1) {
@@ -155,12 +104,12 @@ void sendReplyToClient(aeEventLoop *el, int fd, void *privdata, int mask) {
             } else {
                 ulog(CCACHE_VERBOSE,
                      "Error writing to client: %s", strerror(errno));
-                freeClient(el,c);
+                freeClient(c);
                 return;
             }
         }
         c->lastinteraction = time(NULL);
-        listMoveNodeToTail(el->clients,c->node);
+        listMoveNodeToTail(el->clients,c->elNode);
         if(nwritten<towrite) {
             c->bufpos += nwritten;
         }
@@ -168,22 +117,22 @@ void sendReplyToClient(aeEventLoop *el, int fd, void *privdata, int mask) {
 #ifdef AE_MAX_CLIENT_IDLE_TIME
             resetClient(c);
 #else
-            freeClient(el,c);
+            freeClient(c);
 #endif
-            aeDeleteFileEvent(el,c->fd,AE_WRITABLE);
+            aeModifyFileEvent(el,c->fd,AE_READABLE,c);
+            printf("Send Reply: %.2lf\n", (double)(clock()));
         }
     }
 }
 
-void freeClient(aeEventLoop *el, httpClient *c) {
-    aeDeleteFileEvent(el,c->fd,AE_READABLE);
-    aeDeleteFileEvent(el,c->fd,AE_WRITABLE);
+void freeClient(httpClient *c) {
+    aeDeleteFileEvent(c->el,c->fd);
     close(c->fd);
     /* Release memory */
     if(c->ip) free(c->ip);
     replyFree(c->rep);
     requestFree(c->req);
-    if(c->node) listDelNode(el->clients,c->node);
+    if(c->elNode) listDelNode(c->el->clients,c->elNode);
     free(c);
 }
 
@@ -211,10 +160,18 @@ int closeTimedoutClients(aeEventLoop *el) {
             c = listNodeValue(ln);
             if (el->maxidletime &&
                     (now - c->lastinteraction > el->maxidletime))
-            {
-                ulog(CCACHE_DEBUG,"Closing idle client");
-                /* TODO: if (c->isblocked) DONT FREE CLIENT */
-                freeClient(el,c);
+            {                
+                /* the client is waiting for reply */
+                if (c->blocked) {
+                    /* This situation happens when request_handler time exceeds client timeout.
+                     * Client timeout is typically 30 seconds and
+                     * Request_handler rarely consumes more than 1 second.
+                     * This rare case has a very small role in overall performance.                    
+                     */
+                    listNode *ln = listSearchKey(c->ceList,c);
+                    if(ln) listDelNode(c->ceList,ln);
+                }
+                freeClient(c);
                 deletedNodes++;
             }
             else break;
@@ -234,8 +191,7 @@ void blockClient(aeEventLoop *el, httpClient *c)
 }
 
 void unblockClient(httpClient *c, sds obuf)
-{
-    /* CRITICAL: Possible Data Race Conidtion */
+{    
     if(_installWriteEvent(c->el,c) == CCACHE_OK)
         c->blocked = 0;
     c->rep->obuf = obuf;
@@ -245,7 +201,7 @@ void unblockClient(httpClient *c, sds obuf)
  * Typically gets called every time a reply is built. */
 int _installWriteEvent(aeEventLoop *el, httpClient *c) {
     if (c->fd <= 0) return CCACHE_ERR;
-    if (aeCreateFileEvent(el, c->fd, AE_WRITABLE,sendReplyToClient, c) == AE_ERR)
+    if (aeModifyFileEvent(el,c->fd,AE_WRITABLE,c) == AE_ERR)
         return CCACHE_ERR;
     return CCACHE_OK;
 }

@@ -34,6 +34,8 @@
 #include "lib/util.h"
 #include "organizer/bio.h"
 #include "lib/adlist.h"
+#include "lib/mhash.h"
+#include <time.h>
 
 #define IMG_ENCODE_DEFAULT ".jpg"
 #define IMG_DEFAULT_QUALITY 100 /* percent */
@@ -41,10 +43,8 @@
 
 static sds zoomSrcDir;
 static sds zoomTmpDir;
-static list *zoomTmpFiles;
-static double zoomTotalTmpFile;
 static int baseoffset; /* len of zoomTmpDir */
-static void saveImage(char *dstpath, int baseoffset, uchar *buf, size_t len);
+static void saveImage(char *dstpath, uchar *buf, size_t len);
 static int img_parse_uri(const char *uri, sds *filename, int *w, int *h, int *c, int *q);
 
 typedef enum {
@@ -64,32 +64,35 @@ void zoomServiceInit(sds srcDir)
     zoomSrcDir = sdsdup(srcDir);
     zoomTmpDir = bioPathInTmpDirCharPtr(SERVICE_ZOOM+1);
     if(utilMkdir(zoomTmpDir)) exit(EXIT_FAILURE);
-    baseoffset = sdslen(zoomTmpDir);
-    zoomTmpFiles = listCreate();
-    listSetFreeMethod(zoomTmpFiles,freeFileInfo);
+    int i;
+    for(i = 0;i < 16;i++) {
+        sds zoomSubDirs = sdsdup(zoomTmpDir);
+        zoomSubDirs = sdscatprintf(zoomSubDirs,"/%x",i);
+        if(utilMkdir(zoomSubDirs)) exit(EXIT_FAILURE);
+        sdsfree(zoomSubDirs);
+    }
+    baseoffset = sdslen(zoomTmpDir)+2;
+}
 
-    if(ufilescanFolder(zoomTmpFiles,zoomTmpDir,3)) {
-        printf("scan fail \n");
-        exit(EXIT_FAILURE);
-    }
-    zoomTotalTmpFile = 0;
-    listIter li;
-    listNode *ln;
-    listRewind(zoomTmpFiles,&li);
-    while ((ln = listNext(&li)) != NULL) {
-        struct FileInfo *fi = listNodeValue(ln);
-        zoomTotalTmpFile += fi->size;
-    }
+static sds zoomePathInTmpDir(char *str)
+{
+    sds path = sdsdup(zoomTmpDir);
+    char *dn = mhashFunction((unsigned char*)str,strlen(str));
+    char *fn = fast_url_encode(str);
+    path = sdscatprintf(path,"/%s/%s",dn,fn);
+    free(dn);free(fn);
+    return path;
 }
 
 void zoomImg(safeQueue *sq, struct bio_job *job)
 {
     /* Search tmp folder */
 
-    char *uri = job->name+strlen(SERVICE_ZOOM)+1;
-    sds dstpath = bioPathInTmpDir(SERVICE_ZOOM,uri);
-    printf("path %s\n",dstpath);
-    job->result = ufileMakeHttpReplyFromFile(dstpath);
+    char *uri = job->name+strlen(SERVICE_ZOOM) + 1;
+    sds dstpath = zoomePathInTmpDir(uri);
+    //job->result = ufileMakeHttpReplyFromFile(dstpath);
+    job->result = ufileMmapHttpReply(dstpath);
+    printf("After Read File %.2lf \n", (double)(clock()));
     if(job->result) {
         sdsfree(dstpath);
         safeQueuePush(sq,job); /* the current job will be freed by master */
@@ -114,9 +117,10 @@ void zoomImg(safeQueue *sq, struct bio_job *job)
     uri_parse_state state = img_parse_uri(uri,&fn,&width,&height, &iscrop, &p[1]);
     if(state == parse_error) goto clean;
     // initializations
-    srcpath = bioPathInSrcDir(fn);
-    printf("src %s\n",srcpath);
+    srcpath = bioPathInSrcDir(fn);    
+    printf("Before Load Image %.2lf \n", (double)(clock()));
     src = cvLoadImage(srcpath, CV_LOAD_IMAGE_COLOR);
+    printf("After Load Image %.2lf \n", (double)(clock()));
     /* validate that everything initialized properly */
     if(!src)
     {
@@ -160,6 +164,8 @@ void zoomImg(safeQueue *sq, struct bio_job *job)
         if(!dst) goto clean;
 
         cvResize(src,dst,CV_INTER_CUBIC);
+        printf("After Resize Image %.2lf \n", (double)(clock()));
+
 
         if(iscrop) {
             cvResetImageROI( src );
@@ -170,6 +176,9 @@ void zoomImg(safeQueue *sq, struct bio_job *job)
 
 
     enImg = cvEncodeImage(IMG_ENCODE_DEFAULT, toencode, p );
+
+    printf("After Encode Image %.2lf \n", (double)(clock()));
+
     buf = enImg->data.ptr;
     len = enImg->rows*enImg->cols;
     job->result = ufilMakettpReplyFromBuffer(buf,len);
@@ -187,7 +196,7 @@ clean:
     if(srcpath) sdsfree(srcpath);
     if(src) cvReleaseImage(&src);
     if(enImg){
-        saveImage(dstpath, baseoffset, buf, len);
+        saveImage(dstpath, buf, len);
         cvReleaseMat(&enImg);
     }
     sdsfree(dstpath);
@@ -195,38 +204,11 @@ clean:
     return;
 }
 
-void saveImage(char* dstpath, int baseoffset, uchar *buf, size_t len)
+void saveImage(char* dstpath, uchar *buf, size_t len)
 {
     /* create subdirs */
     if(utilMkSubDirs(dstpath,baseoffset)) return;
-    FILE *outfile = fopen(dstpath, "wb");
-    if (outfile == NULL) {
-        ulog(CCACHE_WARNING, "can't write to %s\n", dstpath);
-        return;
-    }
-    /* ?? how to make it write faster */
-    fwrite(buf,len,1,outfile);
-    listAddNodeTail(zoomTmpFiles,sdsnew(dstpath));
-    zoomTotalTmpFile += len;
-    printf("%s HAVE: %-6.2lfMB USED: %-6.2lf%%\n",
-           SERVICE_ZOOM,
-           BYTES_TO_MEGABYTES(ZOOM_MAX_ON_DISK),
-           zoomTotalTmpFile/ZOOM_MAX_ON_DISK);
-    listIter li;
-    listNode *ln;
-    listRewind(zoomTmpFiles,&li);
-    while ((ln = listNext(&li)) != NULL&&zoomTotalTmpFile > ZOOM_MAX_ON_DISK) {
-        struct FileInfo *fi = listNodeValue(ln);
-        /* delete file on disk */
-        if(remove(fi->fn)==0) {
-            ulog(CCACHE_DEBUG,"%s deleted \n",fi->fn);
-            zoomTotalTmpFile -= fi->size;
-        }
-        else {
-             ulog(CCACHE_WARNING," remove [%s] %s",fi->fn,strerror(errno));
-        }
-        listDelNode(zoomTmpFiles,ln);
-    }
+    ufileMmapWrite(dstpath,buf,len);
 }
 
 int img_parse_uri(const char *uri, sds *filename, int *w, int *h, int *c, int *q)

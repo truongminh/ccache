@@ -28,6 +28,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <sys/mman.h>
 #include <errno.h>
 #include <string.h>
 #include <stdio.h>
@@ -47,7 +48,40 @@ void freeFileInfo(void *ptr)
     }
 }
 
+sds ufileMmapHttpReply(char *fn)
+{
+    int fdin;
+    struct stat fs;
+    if((fdin = open(fn,O_RDONLY)) < 0) {
+        ulog(CCACHE_WARNING,"ufile open[%s] %s",fn,strerror(errno));
+        return NULL;
+    }
+    if (fstat(fdin, &fs)) {
+        ulog(CCACHE_WARNING,"ufile fstat[%s] %s",fn,strerror(errno));
+        return NULL;
+    }
+    sds content = sdsempty();
+    size_t size = fs.st_size;
+    content = sdscatprintf(content,"HTTP/1.1 200 OK\r\nContent-Length: %ld\r\n\r\n",size);
+    content = sdsMakeRoomFor(content,size);
+    size_t before = sdslen(content);
+    char* dst = content + before;
+    char *src;
+    if ((src = mmap(0, size, PROT_READ, MAP_SHARED, fdin, 0)) == MAP_FAILED) {
+        ulog(CCACHE_WARNING,"ufile mmap[%s] %s",fn,strerror(errno));
+        sdsfree(content);
+        close(fdin);
+        return NULL;
+    }
+    memcpy(dst,src,size);
+    munmap(src,size);
+    sdsaddlen(content,size);
+    close(fdin);
+    return content;
 
+}
+
+/* Use native UNIX API syscall */
 sds ufileMakeHttpReplyFromFile(char* fn)
 {
     int fd;
@@ -75,6 +109,7 @@ sds ufileMakeHttpReplyFromFile(char* fn)
             else {
                 ulog(CCACHE_WARNING,"ufile read[%s] %s",fn,strerror(errno));
                 sdsfree(content);
+                close(fd);
                 return NULL;
             }
         }
@@ -89,7 +124,7 @@ sds ufileMakeHttpReplyFromFile(char* fn)
     return content;
 }
 
-/* Use fopen instead of UNIX open API */
+/* Use C standard I/O */
 sds _ufileMakeHttpReplyFromFile(char *filepath)
 {
     FILE* fp;
@@ -154,6 +189,7 @@ int ufilescanFolder(list *files, char *indir, int depth)
               }
               if (fstat(fd, &fs)) {
                   ulog(CCACHE_WARNING,"ufile fstat[%s] %s",fn,strerror(errno));
+                  close(fd);
                   return 0;
               }
 
@@ -162,6 +198,7 @@ int ufilescanFolder(list *files, char *indir, int depth)
               fi->size = fs.st_size;
               /* regular files */
               listAddNodeTail(files,fi);
+              close(fd);
               break;
           }
           case DT_DIR:
@@ -193,21 +230,16 @@ int ufilescanFolder(list *files, char *indir, int depth)
 }
 
 /* The write function from RIO package */
-ssize_t ufileWriteFile(char *fn, void *usrbuf, size_t n)
+ssize_t ufileWriteFile(char *fn, void *src, size_t size)
 {
-    int fd;
-    struct stat fs;
-    if((fd = open(fn,O_RDONLY)) < 0) {
+    int fd;    
+    if((fd = open(fn, O_RDWR | O_CREAT | O_TRUNC, FILE_MODE)) < 0) {
         ulog(CCACHE_WARNING,"ufile open[%s] %s",fn,strerror(errno));
         return -1;
     }
-    if (fstat(fd, &fs)) {
-        ulog(CCACHE_WARNING,"ufile fstat[%s] %s",fn,strerror(errno));
-        return -1;
-    }
-    size_t nleft = n;
+    size_t nleft = size;
     ssize_t nwritten;
-    char *bufp = usrbuf;
+    char *bufp = src;
 
     while (nleft > 0) {
         if ((nwritten = write(fd, bufp, nleft)) <= 0) {
@@ -215,13 +247,44 @@ ssize_t ufileWriteFile(char *fn, void *usrbuf, size_t n)
                 nwritten = 0; /* and call write() again */
             else {
                 ulog(CCACHE_WARNING,"ufile write[%s] %s",fn,strerror(errno));
+                close(fd);
                 return -1; /* errno set by write() */
             }
         }
         nleft -= nwritten;
         bufp += nwritten;
     }
-    return n;
+    close(fd);
+    return 0;
+}
+
+ssize_t ufileMmapWrite(char *fn, void *src, size_t size)
+{
+    int fdout;
+    if ((fdout = open(fn, O_RDWR | O_CREAT | O_TRUNC, FILE_MODE)) < 0) {
+        ulog(CCACHE_WARNING,"ufile open[%s] %s",fn,strerror(errno));
+        return -1;
+    }
+    /* set size of output file */
+    if (lseek(fdout, size - 1, SEEK_SET) == -1) {
+       ulog(CCACHE_WARNING,"ufile lseek[%s] %s",fn,strerror(errno));
+       close(fdout);
+       return -1;
+    }
+    if (write(fdout, "", 1) != 1){
+       ulog(CCACHE_WARNING,"ufile test write[%s] %s",fn,strerror(errno));
+       close(fdout);
+       return -1;
+    }
+    void *dst;
+    if ((dst = mmap(0, size, PROT_READ | PROT_WRITE,MAP_SHARED, fdout, 0)) == MAP_FAILED){
+        ulog(CCACHE_WARNING,"ufile mmap[%s] %s",fn,strerror(errno));
+        close(fdout);
+        return -1;
+     }
+    memcpy(dst, src, size); /* does the file copy */
+    munmap(dst,size);
+    return 0;
 }
 
 /*

@@ -31,30 +31,35 @@
 #include "lib/dict.h"
 #include "lib/adlist.h"
 #include "lib/safe_queue.h"
-#include "net/client.h"
+#include "lib/sds.h"
 
 #define CACHE_OK DICT_OK
 #define CACHE_ERR DICT_ERR
 
-#define CACHE_NEW 1
-#define CACHE_OLD 2
+#define CACHE_REQUEST_NEW 1
+#define CACHE_REQUEST_OLD 2
+#define CACHE_REPLY_NEW 4
 
 list *slave_caches;
+
+
+typedef struct {
+    dict *data;
+    safeQueue *outboxOld;
+    safeQueue *outboxNew;
+    safeQueue *inboxNew;
+    list *accesslist;    
+    void *el;
+} ccache;
+
 
 typedef struct cacheEntry {
     dictEntry *de;
     listNode *ln;
     void *val;
-    safeQueue *waiting_clients;
+    list *waiting_clients;
+    ccache *mycache;
 } cacheEntry;
-
-typedef struct {
-    dict *data;
-    safeQueue *forOld;
-    safeQueue *forNew;
-    list *accesslist;    
-    void *el;
-} ccache;
 
 #define cacheGetList(c) (c->accesslist)
 ccache *cacheCreate();
@@ -70,8 +75,6 @@ int cacheSendMessage(ccache *c, void *ce, int forWhom);
 void *cacheGetMessage(ccache *c, int forWhom);
 
 ccache *cacheAddSlave(void *el);
-void cacheAddWatchClient(cacheEntry *ce, httpClient *client);
-
 
 #if(CCACHE_LOG_LEVEL == CCACHE_DEBUG)
     #define REPORT_MASTER_ADD_KEY(key) printf("Master \t Add new entry [%s]\n",key)

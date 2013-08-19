@@ -24,7 +24,8 @@ HEADERS += \
     src/net/anet.h \
     src/net/ae.h \    
     src/organizer/bio.h \
-    src/service/zoom.h
+    src/service/zoom.h \
+    src/net/http_server.h
 
 SOURCES += \
     src/main.c \    
@@ -44,10 +45,11 @@ SOURCES += \
     src/lib/mhash.c \
     src/net/client.c \
     src/net/anet.c \
-    src/net/ae_epoll.c \
     src/net/ae.c \
     src/organizer/bio.c \
-    src/service/zoom.c
+    src/service/zoom.c \
+    src/usage.c \
+    src/net/http_server.c
 
 
 INCLUDEPATH +=  src/
